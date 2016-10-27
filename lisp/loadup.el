@@ -474,6 +474,65 @@ lost after dumping")))
 						invocation-directory)
 			      (expand-file-name name invocation-directory)
 			      t)))
+      (message "Dumping into dumped.elc...preparing...")
+
+      ;; Dump the current state into a file so we can reload it!
+      (with-current-buffer (generate-new-buffer "dumped.elc")
+        (message "Dumping into dumped.elc...generating...")
+        (insert ";ELC\^W\^@\^@\^@\n;;; Compiled\n;;; in Emacs version " emacs-version "\n")
+        (let ((cmds '()))
+          (setcdr global-buffers-menu-map nil) ;; Get rid of buffer objects!
+          (mapatoms
+           (lambda (s)
+             (when (and (fboundp s)
+                        (not (subrp (symbol-function s)))
+                        ;; FIXME: We need these, but they contain
+                        ;; unprintable objects.
+                        (not (memq s '(rename-buffer))))
+               (push `(fset ',s ,(macroexp-quote (symbol-function s))) cmds))
+             (when (and (boundp s) (not (keywordp s))
+                        (not (memq s '(nil t
+                                           ;; I think we don't need these!
+                                           terminal-frame
+                                           ;; FIXME: We need these, but they contain
+                                           ;; unprintable objects.
+                                           advertised-signature-table
+                                           undo-auto--undoably-changed-buffers))))
+               ;; FIXME: Don't record in the load-history!
+               ;; FIXME: Handle varaliases!
+               (let ((v (symbol-value s)))
+                 (push `(defvar ,s
+                          ,(cond
+                            ((subrp v)
+                             `(symbol-function ',(intern (subr-name v))))
+                            ((and (markerp v) (null (marker-buffer v)))
+                             '(make-marker))
+                            ((and (overlayp v) (null (overlay-buffer v)))
+                             '(let ((ol (make-overlay (point-min) (point-min))))
+                                (delete-overlay ol)
+                                ol))
+                            (v (macroexp-quote v))))
+                       cmds)))
+             (when (symbol-plist s)
+               (push `(setplist ',s ',(symbol-plist s)) cmds))))
+          (message "Dumping into dumped.elc...printing...")
+          (let ((print-circle t)
+                (print-gensym t)
+                (print-quoted t)
+                (print-level nil)
+                (print-length nil)
+                (print-escape-newlines t))
+            (print `(progn . ,cmds) (current-buffer)))
+          (goto-char (point-min))
+          (while (re-search-forward " (\\(defvar\\|setplist\\|fset\\) " nil t)
+            (goto-char (match-beginning 0))
+            (delete-char 1) (insert "\n"))
+          (message "Dumping into dumped.elc...saving...")
+          (let ((coding-system-for-write 'emacs-internal))
+            (write-region (point-min) (point-max) (buffer-name)))
+          (message "Dumping into dumped.elc...done")
+          ))
+
       (kill-emacs)))
 
 ;; For machines with CANNOT_DUMP defined in config.h,
