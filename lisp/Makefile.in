@@ -283,7 +283,7 @@ $(THEFILE)c:
 
 .PHONY: compile-first compile-main compile compile-always
 
-compile-first: $(COMPILE_FIRST)
+compile-first: loaddefs.el $(COMPILE_FIRST)
 
 # In 'compile-main' we could directly do
 #    ... | xargs $(MAKE)

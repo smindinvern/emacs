@@ -155,7 +155,7 @@
 ;; autogen/update_autogen can be used to periodically update ldefs-boot.
 (condition-case nil (load "loaddefs.el")
   ;; In case loaddefs hasn't been generated yet.
-  (file-error (load "ldefs-boot.el")))
+  (file-error (load "ldefs-boot-manual.el")))
 
 (let ((new (make-hash-table :test 'equal)))
   ;; Now that loaddefs has populated definition-prefixes, purify its contents.
