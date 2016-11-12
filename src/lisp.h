@@ -2811,6 +2811,11 @@ CHECK_VECTOR (Lisp_Object x)
   CHECK_TYPE (VECTORP (x), Qvectorp, x);
 }
 INLINE void
+CHECK_COMPILED (Lisp_Object x)
+{
+  CHECK_TYPE (COMPILEDP (x), Qcompiledp, x);
+}
+INLINE void
 CHECK_BOOL_VECTOR (Lisp_Object x)
 {
   CHECK_TYPE (BOOL_VECTOR_P (x), Qbool_vector_p, x);
@@ -4205,6 +4210,7 @@ extern int read_bytecode_char (bool);
 extern void syms_of_bytecode (void);
 extern struct byte_stack *byte_stack_list;
 extern void relocate_byte_stack (void);
+extern Lisp_Object jit_byte_code (Lisp_Object, Lisp_Object, ptrdiff_t, Lisp_Object *);
 extern Lisp_Object exec_byte_code (Lisp_Object, Lisp_Object, Lisp_Object,
 				   Lisp_Object, ptrdiff_t, Lisp_Object *);
 
