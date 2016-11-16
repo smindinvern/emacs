@@ -21,10 +21,12 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifndef EMACS_LISP_H
 #define EMACS_LISP_H
 
+#include <alloca.h>
 #include <setjmp.h>
 #include <stdalign.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <string.h>
 #include <float.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -68,6 +70,7 @@ DEFINE_GDB_SYMBOL_BEGIN (int, GCTYPEBITS)
 DEFINE_GDB_SYMBOL_END (GCTYPEBITS)
 
 /* EMACS_INT - signed integer wide enough to hold an Emacs value
+   EMACS_INT_WIDTH - width in bits of EMACS_INT
    EMACS_INT_MAX - maximum value of EMACS_INT; can be used in #if
    pI - printf length modifier for EMACS_INT
    EMACS_UINT - unsigned variant of EMACS_INT */
@@ -77,18 +80,25 @@ DEFINE_GDB_SYMBOL_END (GCTYPEBITS)
 # elif INTPTR_MAX <= INT_MAX && !defined WIDE_EMACS_INT
 typedef int EMACS_INT;
 typedef unsigned int EMACS_UINT;
+enum { EMACS_INT_WIDTH = INT_WIDTH };
 #  define EMACS_INT_MAX INT_MAX
 #  define pI ""
 # elif INTPTR_MAX <= LONG_MAX && !defined WIDE_EMACS_INT
 typedef long int EMACS_INT;
 typedef unsigned long EMACS_UINT;
+enum { EMACS_INT_WIDTH = LONG_WIDTH };
 #  define EMACS_INT_MAX LONG_MAX
 #  define pI "l"
 # elif INTPTR_MAX <= LLONG_MAX
 typedef long long int EMACS_INT;
 typedef unsigned long long int EMACS_UINT;
+enum { EMACS_INT_WIDTH = LLONG_WIDTH };
 #  define EMACS_INT_MAX LLONG_MAX
-#  define pI "ll"
+#  ifdef __MINGW32__
+#   define pI "I64"
+#  else
+#   define pI "ll"
+#  endif
 # else
 #  error "INTPTR_MAX too large"
 # endif
@@ -103,26 +113,18 @@ enum {  BOOL_VECTOR_BITS_PER_CHAR =
 
 /* An unsigned integer type representing a fixed-length bit sequence,
    suitable for bool vector words, GC mark bits, etc.  Normally it is size_t
-   for speed, but it is unsigned char on weird platforms.  */
+   for speed, but on weird platforms it is unsigned char and not all
+   its bits are used.  */
 #if BOOL_VECTOR_BITS_PER_CHAR == CHAR_BIT
 typedef size_t bits_word;
 # define BITS_WORD_MAX SIZE_MAX
-enum { BITS_PER_BITS_WORD = CHAR_BIT * sizeof (bits_word) };
+enum { BITS_PER_BITS_WORD = SIZE_WIDTH };
 #else
 typedef unsigned char bits_word;
 # define BITS_WORD_MAX ((1u << BOOL_VECTOR_BITS_PER_CHAR) - 1)
 enum { BITS_PER_BITS_WORD = BOOL_VECTOR_BITS_PER_CHAR };
 #endif
 verify (BITS_WORD_MAX >> (BITS_PER_BITS_WORD - 1) == 1);
-
-/* Number of bits in some machine integer types.  */
-enum
-  {
-    BITS_PER_CHAR      = CHAR_BIT,
-    BITS_PER_SHORT     = CHAR_BIT * sizeof (short),
-    BITS_PER_LONG      = CHAR_BIT * sizeof (long int),
-    BITS_PER_EMACS_INT = CHAR_BIT * sizeof (EMACS_INT)
-  };
 
 /* printmax_t and uprintmax_t are types for printing large integers.
    These are the widest integers that are supported for printing.
@@ -228,7 +230,7 @@ enum Lisp_Bits
 #define GCALIGNMENT 8
 
     /* Number of bits in a Lisp_Object value, not counting the tag.  */
-    VALBITS = BITS_PER_EMACS_INT - GCTYPEBITS,
+    VALBITS = EMACS_INT_WIDTH - GCTYPEBITS,
 
     /* Number of bits in a Lisp fixnum tag.  */
     INTTYPEBITS = GCTYPEBITS - 1,
@@ -341,7 +343,9 @@ error !;
      (struct Lisp_Symbol *) ((intptr_t) XLI (a) - Lisp_Symbol \
 			     + (char *) lispsym))
 # define lisp_h_XTYPE(a) ((enum Lisp_Type) (XLI (a) & ~VALMASK))
-# define lisp_h_XUNTAG(a, type) ((void *) (intptr_t) (XLI (a) - (type)))
+# define lisp_h_XUNTAG(a, type) \
+    __builtin_assume_aligned ((void *) (intptr_t) (XLI (a) - (type)), \
+			      GCALIGNMENT)
 #endif
 
 /* When compiling via gcc -O0, define the key operations as macros, as
@@ -600,7 +604,9 @@ extern _Noreturn Lisp_Object wrong_type_argument (Lisp_Object, Lisp_Object);
 extern _Noreturn void wrong_choice (Lisp_Object, Lisp_Object);
 
 /* Defined in emacs.c.  */
+#ifdef DOUG_LEA_MALLOC
 extern bool might_dump;
+#endif
 /* True means Emacs has already been initialized.
    Used during startup to detect startup of dumped Emacs.  */
 extern bool initialized;
@@ -719,12 +725,16 @@ struct Lisp_Symbol
    except the former expands to an integer constant expression.  */
 #define XLI_BUILTIN_LISPSYM(iname) TAG_SYMOFFSET ((iname) * sizeof *lispsym)
 
+/* LISPSYM_INITIALLY (Qfoo) is equivalent to Qfoo except it is
+   designed for use as an initializer, even for a constant initializer.  */
+#define LISPSYM_INITIALLY(name) LISP_INITIALLY (XLI_BUILTIN_LISPSYM (i##name))
+
 /* Declare extern constants for Lisp symbols.  These can be helpful
    when using a debugger like GDB, on older platforms where the debug
    format does not represent C macros.  */
 #define DEFINE_LISP_SYMBOL(name) \
   DEFINE_GDB_SYMBOL_BEGIN (Lisp_Object, name) \
-  DEFINE_GDB_SYMBOL_END (LISP_INITIALLY (XLI_BUILTIN_LISPSYM (i##name)))
+  DEFINE_GDB_SYMBOL_END (LISPSYM_INITIALLY (name))
 
 /* By default, define macros for Qt, etc., as this leads to a bit
    better performance in the core Emacs interpreter.  A plugin can
@@ -1417,13 +1427,6 @@ struct Lisp_Vector
     Lisp_Object contents[FLEXIBLE_ARRAY_MEMBER];
   };
 
-/* C11 prohibits alignof (struct Lisp_Vector), so compute it manually.  */
-enum
-  {
-    ALIGNOF_STRUCT_LISP_VECTOR
-      = alignof (union { struct vectorlike_header a; Lisp_Object b; })
-  };
-
 /* A boolvector is a kind of vectorlike, with contents like a string.  */
 
 struct Lisp_Bool_Vector
@@ -1740,7 +1743,7 @@ struct Lisp_Subr
     short min_args, max_args;
     const char *symbol_name;
     const char *intspec;
-    const char *doc;
+    EMACS_INT doc;
   };
 
 enum char_table_specials
@@ -2022,7 +2025,7 @@ static double const DEFAULT_REHASH_SIZE = 1.5;
 INLINE EMACS_UINT
 sxhash_combine (EMACS_UINT x, EMACS_UINT y)
 {
-  return (x << 4) + (x >> (BITS_PER_EMACS_INT - 4)) + y;
+  return (x << 4) + (x >> (EMACS_INT_WIDTH - 4)) + y;
 }
 
 /* Hash X, returning a value that fits into a fixnum.  */
@@ -2030,7 +2033,7 @@ sxhash_combine (EMACS_UINT x, EMACS_UINT y)
 INLINE EMACS_UINT
 SXHASH_REDUCE (EMACS_UINT x)
 {
-  return (x ^ x >> (BITS_PER_EMACS_INT - FIXNUM_BITS)) & INTMASK;
+  return (x ^ x >> (EMACS_INT_WIDTH - FIXNUM_BITS)) & INTMASK;
 }
 
 /* These structures are used for various misc types.  */
@@ -3196,7 +3199,6 @@ struct handler
   ptrdiff_t pdlcount;
   int poll_suppress_count;
   int interrupt_input_blocked;
-  struct byte_stack *byte_stack;
 };
 
 extern Lisp_Object memory_signal_data;
@@ -3445,7 +3447,7 @@ ptrdiff_t hash_lookup (struct Lisp_Hash_Table *, Lisp_Object, EMACS_UINT *);
 ptrdiff_t hash_put (struct Lisp_Hash_Table *, Lisp_Object, Lisp_Object,
 		    EMACS_UINT);
 void hash_remove_from_table (struct Lisp_Hash_Table *, Lisp_Object);
-extern struct hash_table_test hashtest_eq, hashtest_eql, hashtest_equal;
+extern struct hash_table_test const hashtest_eq, hashtest_eql, hashtest_equal;
 extern void validate_subarray (Lisp_Object, Lisp_Object, Lisp_Object,
 			       ptrdiff_t, ptrdiff_t *, ptrdiff_t *);
 extern Lisp_Object substring_both (Lisp_Object, ptrdiff_t, ptrdiff_t,
@@ -3509,7 +3511,7 @@ extern void insert_from_string_before_markers (Lisp_Object, ptrdiff_t,
 					       ptrdiff_t, bool);
 extern void del_range (ptrdiff_t, ptrdiff_t);
 extern Lisp_Object del_range_1 (ptrdiff_t, ptrdiff_t, bool, bool);
-extern void del_range_byte (ptrdiff_t, ptrdiff_t, bool);
+extern void del_range_byte (ptrdiff_t, ptrdiff_t);
 extern void del_range_both (ptrdiff_t, ptrdiff_t, ptrdiff_t, ptrdiff_t, bool);
 extern Lisp_Object del_range_2 (ptrdiff_t, ptrdiff_t,
 				ptrdiff_t, ptrdiff_t, bool);
@@ -3522,6 +3524,8 @@ extern void adjust_after_insert (ptrdiff_t, ptrdiff_t, ptrdiff_t,
 				 ptrdiff_t, ptrdiff_t);
 extern void adjust_markers_for_delete (ptrdiff_t, ptrdiff_t,
 				       ptrdiff_t, ptrdiff_t);
+extern void adjust_markers_bytepos (ptrdiff_t, ptrdiff_t,
+				    ptrdiff_t, ptrdiff_t, int);
 extern void replace_range (ptrdiff_t, ptrdiff_t, Lisp_Object, bool, bool, bool, bool);
 extern void replace_range_2 (ptrdiff_t, ptrdiff_t, ptrdiff_t, ptrdiff_t,
 			     const char *, ptrdiff_t, ptrdiff_t, bool);
@@ -3590,13 +3594,8 @@ extern void mark_object (Lisp_Object);
 #if defined REL_ALLOC && !defined SYSTEM_MALLOC && !defined HYBRID_MALLOC
 extern void refill_memory_reserve (void);
 #endif
-#ifdef DOUG_LEA_MALLOC
 extern void alloc_unexec_pre (void);
 extern void alloc_unexec_post (void);
-#else
-INLINE void alloc_unexec_pre (void) {}
-INLINE void alloc_unexec_post (void) {}
-#endif
 extern const char *pending_malloc_warning;
 extern Lisp_Object zero_vector;
 extern Lisp_Object *stack_base;
@@ -3734,7 +3733,6 @@ extern struct Lisp_Vector *allocate_pseudovector (int, int, int,
 				   VECSIZE (type), tag))
 
 extern bool gc_in_progress;
-extern bool abort_on_gc;
 extern Lisp_Object make_float (double);
 extern void display_malloc_warning (void);
 extern ptrdiff_t inhibit_garbage_collection (void);
@@ -3761,6 +3759,15 @@ extern void check_cons_list (void);
 #else
 INLINE void (check_cons_list) (void) { lisp_h_check_cons_list (); }
 #endif
+
+/* Defined in gmalloc.c.  */
+#if !defined DOUG_LEA_MALLOC && !defined HYBRID_MALLOC && !defined SYSTEM_MALLOC
+extern size_t __malloc_extra_blocks;
+#endif
+#if !HAVE_DECL_ALIGNED_ALLOC
+extern void *aligned_alloc (size_t, size_t) ATTRIBUTE_MALLOC_SIZE ((2));
+#endif
+extern void malloc_enable_thread (void);
 
 #ifdef REL_ALLOC
 /* Defined in ralloc.c.  */
@@ -3867,7 +3874,12 @@ extern void run_hook_with_args_2 (Lisp_Object, Lisp_Object, Lisp_Object);
 extern Lisp_Object run_hook_with_args (ptrdiff_t nargs, Lisp_Object *args,
 				       Lisp_Object (*funcall)
 				       (ptrdiff_t nargs, Lisp_Object *args));
-extern _Noreturn void xsignal (Lisp_Object, Lisp_Object);
+extern Lisp_Object quit (void);
+INLINE _Noreturn void
+xsignal (Lisp_Object error_symbol, Lisp_Object data)
+{
+  Fsignal (error_symbol, data);
+}
 extern _Noreturn void xsignal0 (Lisp_Object);
 extern _Noreturn void xsignal1 (Lisp_Object, Lisp_Object);
 extern _Noreturn void xsignal2 (Lisp_Object, Lisp_Object, Lisp_Object);
@@ -3906,6 +3918,8 @@ extern void set_unwind_protect_ptr (ptrdiff_t, void (*) (void *), void *);
 extern Lisp_Object unbind_to (ptrdiff_t, Lisp_Object);
 extern _Noreturn void error (const char *, ...) ATTRIBUTE_FORMAT_PRINTF (1, 2);
 extern _Noreturn void verror (const char *, va_list)
+  ATTRIBUTE_FORMAT_PRINTF (1, 0);
+extern Lisp_Object vformat_string (const char *, va_list)
   ATTRIBUTE_FORMAT_PRINTF (1, 0);
 extern void un_autoload (Lisp_Object);
 extern Lisp_Object call_debugger (Lisp_Object arg);
@@ -4125,6 +4139,7 @@ INLINE void fixup_locale (void) {}
 INLINE void synchronize_system_messages_locale (void) {}
 INLINE void synchronize_system_time_locale (void) {}
 #endif
+extern char *emacs_strerror (int);
 extern void shut_down_emacs (int, Lisp_Object);
 
 /* True means don't do interactive redisplay and don't change tty modes.  */
@@ -4132,6 +4147,9 @@ extern bool noninteractive;
 
 /* True means remove site-lisp directories from load-path.  */
 extern bool no_site_lisp;
+
+/* True means put details like time stamps into builds.  */
+extern bool build_details;
 
 /* Pipe used to send exit notification to the daemon parent at
    startup.  On Windows, we use a kernel event instead.  */
@@ -4158,8 +4176,8 @@ extern void kill_buffer_processes (Lisp_Object);
 extern int wait_reading_process_output (intmax_t, int, int, bool, Lisp_Object,
 					struct Lisp_Process *, int);
 /* Max value for the first argument of wait_reading_process_output.  */
-#if __GNUC__ == 3 || (__GNUC__ == 4 && __GNUC_MINOR__ <= 5)
-/* Work around a bug in GCC 3.4.2, known to be fixed in GCC 4.6.3.
+#if GNUC_PREREQ (3, 0, 0) && ! GNUC_PREREQ (4, 6, 0)
+/* Work around a bug in GCC 3.4.2, known to be fixed in GCC 4.6.0.
    The bug merely causes a bogus warning, but the warning is annoying.  */
 # define WAIT_READING_MAX min (TYPE_MAXIMUM (time_t), INTMAX_MAX)
 #else
@@ -4174,7 +4192,7 @@ extern void delete_keyboard_wait_descriptor (int);
 extern void add_gpm_wait_descriptor (int);
 extern void delete_gpm_wait_descriptor (int);
 #endif
-extern void init_process_emacs (void);
+extern void init_process_emacs (int);
 extern void syms_of_process (void);
 extern void setup_process_coding_systems (Lisp_Object);
 
@@ -4208,11 +4226,10 @@ extern int read_bytecode_char (bool);
 
 /* Defined in bytecode.c.  */
 extern void syms_of_bytecode (void);
-extern struct byte_stack *byte_stack_list;
-extern void relocate_byte_stack (void);
 extern Lisp_Object jit_byte_code (Lisp_Object, Lisp_Object, ptrdiff_t, Lisp_Object *);
 extern Lisp_Object exec_byte_code (Lisp_Object, Lisp_Object, Lisp_Object,
 				   Lisp_Object, ptrdiff_t, Lisp_Object *);
+extern Lisp_Object get_byte_code_arity (Lisp_Object);
 
 /* Defined in macros.c.  */
 extern void init_macros (void);
@@ -4245,9 +4262,14 @@ struct tty_display_info;
 struct terminal;
 
 /* Defined in sysdep.c.  */
-#ifndef HAVE_GET_CURRENT_DIR_NAME
-extern char *get_current_dir_name (void);
+#ifdef HAVE_PERSONALITY_ADDR_NO_RANDOMIZE
+extern bool disable_address_randomization (void);
+#else
+INLINE bool disable_address_randomization (void) { return false; }
 #endif
+extern int emacs_exec_file (char const *, char *const *, char *const *);
+extern void init_standard_fds (void);
+extern char *emacs_get_current_dir_name (void);
 extern void stuff_char (char c);
 extern void init_foreground_group (void);
 extern void sys_subshell (void);
@@ -4502,12 +4524,14 @@ extern void *record_xmalloc (size_t) ATTRIBUTE_ALLOC_SIZE ((1));
     }					\
   } while (false)
 
-/* SAFE_ALLOCA_LISP allocates an array of Lisp_Objects.  */
+/* Set BUF to point to an allocated array of NELT Lisp_Objects,
+   immediately followed by EXTRA spare bytes.  */
 
-#define SAFE_ALLOCA_LISP(buf, nelt)			       \
+#define SAFE_ALLOCA_LISP_EXTRA(buf, nelt, extra)	       \
   do {							       \
     ptrdiff_t alloca_nbytes;				       \
     if (INT_MULTIPLY_WRAPV (nelt, word_size, &alloca_nbytes)   \
+	|| INT_ADD_WRAPV (alloca_nbytes, extra, &alloca_nbytes) \
 	|| SIZE_MAX < alloca_nbytes)			       \
       memory_full (SIZE_MAX);				       \
     else if (alloca_nbytes <= sa_avail)			       \
@@ -4522,6 +4546,10 @@ extern void *record_xmalloc (size_t) ATTRIBUTE_ALLOC_SIZE ((1));
       }							       \
   } while (false)
 
+/* Set BUF to point to an allocated array of NELT Lisp_Objects.  */
+
+#define SAFE_ALLOCA_LISP(buf, nelt) SAFE_ALLOCA_LISP_EXTRA (buf, nelt, 0)
+
 
 /* If USE_STACK_LISP_OBJECTS, define macros that and functions that allocate
    block-scoped conses and strings.  These objects are not
@@ -4533,8 +4561,7 @@ extern void *record_xmalloc (size_t) ATTRIBUTE_ALLOC_SIZE ((1));
    Build with CPPFLAGS='-DUSE_STACK_LISP_OBJECTS=0' to disable it.  */
 
 #if (!defined USE_STACK_LISP_OBJECTS \
-     && defined __GNUC__ && !defined __clang__ \
-     && !(4 < __GNUC__ + (3 < __GNUC_MINOR__ + (2 <= __GNUC_PATCHLEVEL__))))
+     && defined __GNUC__ && !defined __clang__ && ! GNUC_PREREQ (4, 3, 2))
   /* Work around GCC bugs 36584 and 35271, which were fixed in GCC 4.3.2.  */
 # define USE_STACK_LISP_OBJECTS false
 #endif
@@ -4607,27 +4634,29 @@ enum
 						     STACK_CONS (d, Qnil)))) \
 	 : list4 (a, b, c, d))
 
-/* Check whether stack-allocated strings are ASCII-only.  */
+/* Declare NAME as an auto Lisp string if possible, a GC-based one if not.
+   Take its unibyte value from the null-terminated string STR,
+   an expression that should not have side effects.
+   STR's value is not necessarily copied.  The resulting Lisp string
+   should not be modified or made visible to user code.  */
 
-#if defined (ENABLE_CHECKING) && USE_STACK_LISP_OBJECTS
-extern const char *verify_ascii (const char *);
-#else
-# define verify_ascii(str) (str)
-#endif
+#define AUTO_STRING(name, str) \
+  AUTO_STRING_WITH_LEN (name, str, strlen (str))
 
 /* Declare NAME as an auto Lisp string if possible, a GC-based one if not.
-   Take its value from STR.  STR is not necessarily copied and should
-   contain only ASCII characters.  The resulting Lisp string should
-   not be modified or made visible to user code.  */
+   Take its unibyte value from the null-terminated string STR with length LEN.
+   STR may have side effects and may contain null bytes.
+   STR's value is not necessarily copied.  The resulting Lisp string
+   should not be modified or made visible to user code.  */
 
-#define AUTO_STRING(name, str)						\
+#define AUTO_STRING_WITH_LEN(name, str, len)				\
   Lisp_Object name =							\
     (USE_STACK_STRING							\
      ? (make_lisp_ptr							\
 	((&(union Aligned_String)					\
-	  {{strlen (str), -1, 0, (unsigned char *) verify_ascii (str)}}.s), \
-	  Lisp_String))							\
-     : build_string (verify_ascii (str)))
+	  {{len, -1, 0, (unsigned char *) (str)}}.s),			\
+	 Lisp_String))							\
+     : make_unibyte_string (str, len))
 
 /* Loop over all tails of a list, checking for cycles.
    FIXME: Make tortoise and n internal declarations.

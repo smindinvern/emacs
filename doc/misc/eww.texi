@@ -109,6 +109,12 @@ only display this part.  This usually gets rid of menus and the like.
   The @kbd{F} command (@code{eww-toggle-fonts}) toggles whether to use
 variable-pitch fonts or not.  This sets the @code{shr-use-fonts} variable.
 
+@findex eww-toggle-colors
+@findex shr-use-colors
+@kindex F
+  The @kbd{C} command (@code{eww-toggle-colors}) toggles whether to use
+HTML-specified colors or not.  This sets the @code{shr-use-colors} variable.
+
 @findex eww-download
 @vindex eww-download-directory
 @kindex d
@@ -158,12 +164,16 @@ You can view stored bookmarks with @kbd{B}
 (@code{eww-list-bookmarks}).  This will open the bookmark buffer
 @file{*eww bookmarks*}.
 
+@findex eww-switch-to-buffer
 @findex eww-list-buffers
+@kindex s
 @kindex S
 @cindex Multiple Buffers
   To get summary of currently opened EWW buffers, press @kbd{S}
 (@code{eww-list-buffers}).  The @file{*eww buffers*} buffer allows you
-to quickly kill, flip through and switch to specific EWW buffer.
+to quickly kill, flip through and switch to specific EWW buffer.  To
+switch EWW buffers through a minibuffer prompt, press @kbd{s}
+(@code{eww-switch-to-buffer}).
 
 @findex eww-browse-with-external-browser
 @vindex shr-external-browser

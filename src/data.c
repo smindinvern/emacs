@@ -1619,8 +1619,8 @@ The function `default-value' gets the default value and `set-default' sets it.  
 {
   struct Lisp_Symbol *sym;
   struct Lisp_Buffer_Local_Value *blv = NULL;
-  union Lisp_Val_Fwd valcontents IF_LINT (= {LISP_INITIALLY_ZERO});
-  bool forwarded IF_LINT (= 0);
+  union Lisp_Val_Fwd valcontents;
+  bool forwarded;
 
   CHECK_SYMBOL (variable);
   sym = XSYMBOL (variable);
@@ -1697,8 +1697,8 @@ Instead, use `add-hook' and specify t for the LOCAL argument.  */)
   (Lisp_Object variable)
 {
   Lisp_Object tem;
-  bool forwarded IF_LINT (= 0);
-  union Lisp_Val_Fwd valcontents IF_LINT (= {LISP_INITIALLY_ZERO});
+  bool forwarded;
+  union Lisp_Val_Fwd valcontents;
   struct Lisp_Symbol *sym;
   struct Lisp_Buffer_Local_Value *blv = NULL;
 
@@ -2463,7 +2463,7 @@ uintmax_t
 cons_to_unsigned (Lisp_Object c, uintmax_t max)
 {
   bool valid = 0;
-  uintmax_t val IF_LINT (= 0);
+  uintmax_t val;
   if (INTEGERP (c))
     {
       valid = 0 <= XINT (c);
@@ -2516,7 +2516,7 @@ intmax_t
 cons_to_signed (Lisp_Object c, intmax_t min, intmax_t max)
 {
   bool valid = 0;
-  intmax_t val IF_LINT (= 0);
+  intmax_t val;
   if (INTEGERP (c))
     {
       val = XINT (c);
@@ -2935,11 +2935,11 @@ In this case, the sign bit is duplicated.  */)
   CHECK_NUMBER (value);
   CHECK_NUMBER (count);
 
-  if (XINT (count) >= BITS_PER_EMACS_INT)
+  if (XINT (count) >= EMACS_INT_WIDTH)
     XSETINT (val, 0);
   else if (XINT (count) > 0)
     XSETINT (val, XUINT (value) << XFASTINT (count));
-  else if (XINT (count) <= -BITS_PER_EMACS_INT)
+  else if (XINT (count) <= -EMACS_INT_WIDTH)
     XSETINT (val, XINT (value) < 0 ? -1 : 0);
   else
     XSETINT (val, XINT (value) >> -XINT (count));
@@ -2957,11 +2957,11 @@ In this case, zeros are shifted in on the left.  */)
   CHECK_NUMBER (value);
   CHECK_NUMBER (count);
 
-  if (XINT (count) >= BITS_PER_EMACS_INT)
+  if (XINT (count) >= EMACS_INT_WIDTH)
     XSETINT (val, 0);
   else if (XINT (count) > 0)
     XSETINT (val, XUINT (value) << XFASTINT (count));
-  else if (XINT (count) <= -BITS_PER_EMACS_INT)
+  else if (XINT (count) <= -EMACS_INT_WIDTH)
     XSETINT (val, 0);
   else
     XSETINT (val, XUINT (value) >> -XINT (count));
@@ -3031,24 +3031,24 @@ bool_vector_spare_mask (EMACS_INT nr_bits)
 /* Info about unsigned long long, falling back on unsigned long
    if unsigned long long is not available.  */
 
-#if HAVE_UNSIGNED_LONG_LONG_INT && defined ULLONG_MAX
-enum { BITS_PER_ULL = CHAR_BIT * sizeof (unsigned long long) };
+#if HAVE_UNSIGNED_LONG_LONG_INT && defined ULLONG_WIDTH
+enum { ULL_WIDTH = ULLONG_WIDTH };
 # define ULL_MAX ULLONG_MAX
 #else
-enum { BITS_PER_ULL = CHAR_BIT * sizeof (unsigned long) };
+enum { ULL_WIDTH = ULONG_WIDTH };
 # define ULL_MAX ULONG_MAX
 # define count_one_bits_ll count_one_bits_l
 # define count_trailing_zeros_ll count_trailing_zeros_l
 #endif
 
 /* Shift VAL right by the width of an unsigned long long.
-   BITS_PER_ULL must be less than BITS_PER_BITS_WORD.  */
+   ULL_WIDTH must be less than BITS_PER_BITS_WORD.  */
 
 static bits_word
 shift_right_ull (bits_word w)
 {
   /* Pacify bogus GCC warning about shift count exceeding type width.  */
-  int shift = BITS_PER_ULL - BITS_PER_BITS_WORD < 0 ? BITS_PER_ULL : 0;
+  int shift = ULL_WIDTH - BITS_PER_BITS_WORD < 0 ? ULL_WIDTH : 0;
   return w >> shift;
 }
 
@@ -3065,7 +3065,7 @@ count_one_bits_word (bits_word w)
     {
       int i = 0, count = 0;
       while (count += count_one_bits_ll (w),
-	     (i += BITS_PER_ULL) < BITS_PER_BITS_WORD)
+	     (i += ULL_WIDTH) < BITS_PER_BITS_WORD)
 	w = shift_right_ull (w);
       return count;
     }
@@ -3210,18 +3210,18 @@ count_trailing_zero_bits (bits_word val)
     {
       int count;
       for (count = 0;
-	   count < BITS_PER_BITS_WORD - BITS_PER_ULL;
-	   count += BITS_PER_ULL)
+	   count < BITS_PER_BITS_WORD - ULL_WIDTH;
+	   count += ULL_WIDTH)
 	{
 	  if (val & ULL_MAX)
 	    return count + count_trailing_zeros_ll (val);
 	  val = shift_right_ull (val);
 	}
 
-      if (BITS_PER_BITS_WORD % BITS_PER_ULL != 0
+      if (BITS_PER_BITS_WORD % ULL_WIDTH != 0
 	  && BITS_WORD_MAX == (bits_word) -1)
 	val |= (bits_word) 1 << pre_value (ULONG_MAX < BITS_WORD_MAX,
-					   BITS_PER_BITS_WORD % BITS_PER_ULL);
+					   BITS_PER_BITS_WORD % ULL_WIDTH);
       return count + count_trailing_zeros_ll (val);
     }
 }

@@ -586,9 +586,11 @@ Signal an error if the entire string was not used."
   "This is an internal thingatpt function and should not be used.")
 
 (defun form-at-point (&optional thing pred)
-  (let ((sexp (ignore-errors
-		(thing-at-point--read-from-whole-string
-		 (thing-at-point (or thing 'sexp))))))
+  (let* ((obj (thing-at-point (or thing 'sexp)))
+         (sexp (if (stringp obj)
+                   (ignore-errors
+                     (thing-at-point--read-from-whole-string obj))
+                 obj)))
     (if (or (not pred) (funcall pred sexp)) sexp)))
 
 ;;;###autoload
@@ -603,7 +605,10 @@ Signal an error if the entire string was not used."
 ;;;###autoload
 (defun number-at-point ()
   "Return the number at point, or nil if none is found."
-  (form-at-point 'sexp 'numberp))
+  (when (thing-at-point-looking-at "-?[0-9]+\\.?[0-9]*" 500)
+    (string-to-number
+     (buffer-substring (match-beginning 0) (match-end 0)))))
+
 (put 'number 'thing-at-point 'number-at-point)
 ;;;###autoload
 (defun list-at-point ()

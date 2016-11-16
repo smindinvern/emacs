@@ -93,7 +93,7 @@
 
 (defun tramp-gw-gw-proc-sentinel (proc _event)
   "Delete auxiliary process when we are deleted."
-  (unless (memq (process-status proc) '(run open))
+  (unless (tramp-compat-process-live-p proc)
     (tramp-message
      tramp-gw-vector 4 "Deleting auxiliary process `%s'" tramp-gw-gw-proc)
     (let* ((tramp-verbose 0)
@@ -102,13 +102,13 @@
 
 (defun tramp-gw-aux-proc-sentinel (proc _event)
   "Activate the different filters for involved gateway and auxiliary processes."
-  (when (memq (process-status proc) '(run open))
+  (when (tramp-compat-process-live-p proc)
     ;; A new process has been spawned from `tramp-gw-aux-proc'.
     (tramp-message
      tramp-gw-vector 4
      "Opening auxiliary process `%s', speaking with process `%s'"
      proc tramp-gw-gw-proc)
-    (tramp-compat-set-process-query-on-exit-flag proc nil)
+    (set-process-query-on-exit-flag proc nil)
     ;; We don't want debug messages, because the corresponding debug
     ;; buffer might be undecided.
     (let ((tramp-verbose 0))
@@ -125,6 +125,7 @@
 	  (tramp-gw-process-filter tramp-gw-gw-proc s))))))
 
 (defun tramp-gw-process-filter (proc string)
+  "Resend the string to the other process."
   (let ((tramp-verbose 0))
     ;; The other process might have been stopped already.  We don't
     ;; want to be interrupted then.
@@ -148,8 +149,7 @@ instead of the host name declared in TARGET-VEC."
 	tramp-gw-gw-vector gw-vec)
 
   ;; Start listening auxiliary process.
-  (unless (and (processp tramp-gw-aux-proc)
-	       (memq (process-status tramp-gw-aux-proc) '(listen)))
+  (unless (tramp-compat-process-live-p tramp-gw-aux-proc)
     (let ((aux-vec
 	   (vector "aux" (tramp-file-name-user gw-vec)
 		   (tramp-file-name-host gw-vec) nil nil)))
@@ -158,7 +158,7 @@ instead of the host name declared in TARGET-VEC."
 	     :name (tramp-buffer-name aux-vec) :buffer nil :host 'local
 	     :server t :noquery t :service t :coding 'binary))
       (set-process-sentinel tramp-gw-aux-proc 'tramp-gw-aux-proc-sentinel)
-      (tramp-compat-set-process-query-on-exit-flag tramp-gw-aux-proc nil)
+      (set-process-query-on-exit-flag tramp-gw-aux-proc nil)
       (tramp-message
        vec 4 "Opening auxiliary process `%s', listening on port %d"
        tramp-gw-aux-proc (process-contact tramp-gw-aux-proc :service))))
@@ -204,7 +204,7 @@ instead of the host name declared in TARGET-VEC."
 	   (tramp-file-name-port target-vec)))
     (set-process-sentinel tramp-gw-gw-proc 'tramp-gw-gw-proc-sentinel)
     (set-process-coding-system tramp-gw-gw-proc 'binary 'binary)
-    (tramp-compat-set-process-query-on-exit-flag tramp-gw-gw-proc nil)
+    (set-process-query-on-exit-flag tramp-gw-gw-proc nil)
     (tramp-message
      vec 4 "Opened %s process `%s'"
      (case gw-method ('tunnel "HTTP tunnel") ('socks "SOCKS"))
@@ -235,14 +235,14 @@ authentication is requested from proxy server, provide it."
       (setq proc (open-network-stream
 		  name buffer (nth 1 socks-server) (nth 2 socks-server)))
       (set-process-coding-system proc 'binary 'binary)
-      (tramp-compat-set-process-query-on-exit-flag proc nil)
+      (set-process-query-on-exit-flag proc nil)
       ;; Send CONNECT command.
       (process-send-string proc (format "%s%s\r\n" command authentication))
       (tramp-message
        tramp-gw-vector 6 "\n%s"
        (format
 	"%s%s\r\n" command
-	(tramp-compat-replace-regexp-in-string ;; no password in trace!
+	(replace-regexp-in-string ;; no password in trace!
 	 "Basic [^\r\n]+" "Basic xxxxx" authentication t)))
       (with-current-buffer buffer
 	;; Trap errors to be traced in the right trace buffer.  Often,
@@ -331,6 +331,7 @@ password in password cache.  This is done for the first try only."
 ;;; TODO:
 
 ;; * Provide descriptive Commentary.
+;;
 ;; * Enable it for several gateway processes in parallel.
 
 ;;; tramp-gw.el ends here

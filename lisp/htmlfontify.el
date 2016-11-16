@@ -1,4 +1,4 @@
-;;; htmlfontify.el --- htmlize a buffer/source tree with optional hyperlinks
+;;; htmlfontify.el --- htmlize a buffer/source tree with optional hyperlinks -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2002-2003, 2009-2016 Free Software Foundation, Inc.
 
@@ -89,6 +89,8 @@
 (require 'font-lock)
 ;;  (`font-lock-fontify-region')
 (require 'cus-edit)
+
+(require 'htmlfontify-loaddefs)
 
 (defconst htmlfontify-version 0.21)
 
@@ -1803,8 +1805,7 @@ It is assumed that STRING has text properties that allow it to be
 fontified.  This is a simple convenience wrapper around
 `htmlfontify-buffer'."
   (let* ((hfy-optimizations-1 (copy-sequence hfy-optimizations))
-         (hfy-optimizations (add-to-list 'hfy-optimizations-1
-                                         'skip-refontification)))
+         (hfy-optimizations (pushnew 'skip-refontification hfy-optimizations-1)))
     (with-temp-buffer
       (insert string)
       (htmlfontify-buffer)
@@ -1847,8 +1848,9 @@ Dangerous characters in the existing buffer are turned into HTML
 entities, so you should even be able to do HTML-within-HTML
 fontified display.
 
-You should, however, note that random control or eight-bit
-characters such as ^L (\x0c) or ¤ (\xa4) won't get mapped yet.
+You should, however, note that random control or non-ASCII
+characters such as ^L (U+000C FORM FEED (FF)) or ¤ (U+00A4
+CURRENCY SIGN) won't get mapped yet.
 
 If the SRCDIR and FILE arguments are set, lookup etags derived
 entries in the `hfy-tags-cache' and add HTML anchors and
@@ -2416,26 +2418,6 @@ You may also want to set `hfy-page-header' and `hfy-page-footer'."
   (interactive)
   (let ((file (hfy-initfile)))
     (load file 'NOERROR nil nil) ))
-
-
-;;;### (autoloads nil "hfy-cmap" "hfy-cmap.el" "e644ddae915ddb98c9b2f16ffa5a74b2")
-;;; Generated autoloads from hfy-cmap.el
-
-(autoload 'htmlfontify-load-rgb-file "hfy-cmap" "\
-Load an X11 style rgb.txt FILE.
-Search `hfy-rgb-load-path' if FILE is not specified.
-Loads the variable `hfy-rgb-txt-colour-map', which is used by
-`hfy-fallback-colour-values'.
-
-\(fn &optional FILE)" t nil)
-
-(autoload 'hfy-fallback-colour-values "hfy-cmap" "\
-Use a fallback method for obtaining the rgb values for a color.
-
-\(fn COLOUR-STRING)" nil nil)
-
-;;;***
-
 
 (provide 'htmlfontify)
 

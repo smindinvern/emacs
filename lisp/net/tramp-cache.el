@@ -72,31 +72,16 @@ details see the info pages."
   :version "24.4"
   :type '(repeat (list (choice :tag "File Name regexp" regexp (const nil))
 		       (choice :tag "        Property" string)
-		       (choice :tag "           Value" sexp))))
+		       (choice :tag "           Value" sexp)))
+  :require 'tramp)
 
+;;;###tramp-autoload
 (defcustom tramp-persistency-file-name
-  (cond
-   ;; GNU Emacs.
-   ((and (fboundp 'locate-user-emacs-file))
-    (expand-file-name (tramp-compat-funcall 'locate-user-emacs-file "tramp")))
-   ((and (boundp 'user-emacs-directory)
-	 (stringp (symbol-value 'user-emacs-directory))
-	 (file-directory-p (symbol-value 'user-emacs-directory)))
-    (expand-file-name "tramp" (symbol-value 'user-emacs-directory)))
-   ((and (not (featurep 'xemacs)) (file-directory-p "~/.emacs.d/"))
-    "~/.emacs.d/tramp")
-   ;; XEmacs.
-   ((and (boundp 'user-init-directory)
-	 (stringp (symbol-value 'user-init-directory))
-	 (file-directory-p (symbol-value 'user-init-directory)))
-    (expand-file-name "tramp" (symbol-value 'user-init-directory)))
-   ((and (featurep 'xemacs) (file-directory-p "~/.xemacs/"))
-    "~/.xemacs/tramp")
-   ;; For users without `~/.emacs.d/' or `~/.xemacs/'.
-   (t "~/.tramp"))
+  (expand-file-name (locate-user-emacs-file "tramp"))
   "File which keeps connection history for Tramp connections."
   :group 'tramp
-  :type 'file)
+  :type 'file
+  :require 'tramp)
 
 (defvar tramp-cache-data-changed nil
   "Whether persistent cache data have been changed.")
@@ -241,8 +226,10 @@ This is suppressed for temporary buffers."
 ;;;###tramp-autoload
 (defun tramp-get-connection-property (key property default)
   "Get the named PROPERTY for the connection.
-KEY identifies the connection, it is either a process or a vector.
-If the value is not set for the connection, returns DEFAULT."
+KEY identifies the connection, it is either a process or a
+vector.  A special case is nil, which is used to cache connection
+properties of the local machine.  If the value is not set for the
+connection, returns DEFAULT."
   ;; Unify key by removing localname and hop from vector.  Work with a
   ;; copy in order to avoid side effects.
   (when (vectorp key)
@@ -250,17 +237,24 @@ If the value is not set for the connection, returns DEFAULT."
     (aset key 3 nil)
     (aset key 4 nil))
   (let* ((hash (tramp-get-hash-table key))
-	 (value (if (hash-table-p hash)
-		    (gethash property hash default)
-		  default)))
+	 (value
+	  ;; If the key is an auxiliary process object, check whether
+	  ;; the process is still alive.
+	  (if (and (processp key) (not (tramp-compat-process-live-p key)))
+	      default
+	    (if (hash-table-p hash)
+		(gethash property hash default)
+	      default))))
     (tramp-message key 7 "%s %s" property value)
     value))
 
 ;;;###tramp-autoload
 (defun tramp-set-connection-property (key property value)
   "Set the named PROPERTY of a connection to VALUE.
-KEY identifies the connection, it is either a process or a vector.
-PROPERTY is set persistent when KEY is a vector."
+KEY identifies the connection, it is either a process or a
+vector.  A special case is nil, which is used to cache connection
+properties of the local machine.  PROPERTY is set persistent when
+KEY is a vector."
   ;; Unify key by removing localname and hop from vector.  Work with a
   ;; copy in order to avoid side effects.
   (when (vectorp key)
@@ -276,13 +270,17 @@ PROPERTY is set persistent when KEY is a vector."
 ;;;###tramp-autoload
 (defun tramp-connection-property-p (key property)
   "Check whether named PROPERTY of a connection is defined.
-KEY identifies the connection, it is either a process or a vector."
+KEY identifies the connection, it is either a process or a
+vector.  A special case is nil, which is used to cache connection
+properties of the local machine."
   (not (eq (tramp-get-connection-property key property 'undef) 'undef)))
 
 ;;;###tramp-autoload
 (defun tramp-flush-connection-property (key)
   "Remove all properties identified by KEY.
-KEY identifies the connection, it is either a process or a vector."
+KEY identifies the connection, it is either a process or a
+vector.  A special case is nil, which is used to cache connection
+properties of the local machine."
   ;; Unify key by removing localname and hop from vector.  Work with a
   ;; copy in order to avoid side effects.
   (when (vectorp key)
@@ -307,19 +305,14 @@ KEY identifies the connection, it is either a process or a vector."
       (maphash
        (lambda (key value)
 	 ;; Remove text properties from KEY and VALUE.
-	 ;; `substring-no-properties' does not exist in XEmacs.
-	 (when (functionp 'substring-no-properties)
-	   (when (vectorp key)
-	     (dotimes (i (length key))
-	       (when (stringp (aref key i))
-		 (aset key i
-		       (tramp-compat-funcall
-			'substring-no-properties (aref key i))))))
-	   (when (stringp key)
-	     (setq key (tramp-compat-funcall 'substring-no-properties key)))
-	   (when (stringp value)
-	     (setq value
-		   (tramp-compat-funcall 'substring-no-properties value))))
+	 (when (vectorp key)
+	   (dotimes (i (length key))
+	     (when (stringp (aref key i))
+	       (aset key i (substring-no-properties (aref key i))))))
+	 (when (stringp key)
+	   (setq key (substring-no-properties key)))
+	 (when (stringp value)
+	   (setq value (substring-no-properties value)))
 	 ;; Dump.
 	 (let ((tmp (format
 		     "(%s %s)"
@@ -338,17 +331,18 @@ KEY identifies the connection, it is either a process or a vector."
 ;;;###tramp-autoload
 (defun tramp-list-connections ()
   "Return a list of all known connection vectors according to `tramp-cache'."
-    (let (result)
+    (let (result tramp-verbose)
       (maphash
        (lambda (key _value)
-	 (when (and (vectorp key) (null (aref key 3)))
+	 (when (and (vectorp key) (null (aref key 3))
+		    (tramp-connection-property-p key "process-buffer"))
 	   (add-to-list 'result key)))
        tramp-cache-data)
       result))
 
 (defun tramp-dump-connection-properties ()
   "Write persistent connection properties into file `tramp-persistency-file-name'."
-  ;; We shouldn't fail, otherwise (X)Emacs might not be able to be closed.
+  ;; We shouldn't fail, otherwise Emacs might not be able to be closed.
   (ignore-errors
     (when (and (hash-table-p tramp-cache-data)
 	       (not (zerop (hash-table-count tramp-cache-data)))
@@ -375,7 +369,7 @@ KEY identifies the connection, it is either a process or a vector."
 	(with-temp-file tramp-persistency-file-name
 	  (insert
 	   ";; -*- emacs-lisp -*-"
-	   ;; `time-stamp-string' might not exist in all (X)Emacs flavors.
+	   ;; `time-stamp-string' might not exist in all Emacs flavors.
 	   (condition-case nil
 	       (progn
 		 (format
@@ -418,8 +412,8 @@ for all methods.  Resulting data are derived from connection history."
 	   ;; When "emacs -Q" has been called, both variables are nil.
 	   ;; We do not load the persistency file then, in order to
 	   ;; have a clean test environment.
-	   (or (and (boundp 'init-file-user) (symbol-value 'init-file-user))
-	       (and (boundp 'site-run-file) (symbol-value 'site-run-file))))
+	   (or init-file-user
+	       site-run-file))
   (condition-case err
       (with-temp-buffer
 	(insert-file-contents tramp-persistency-file-name)

@@ -25,12 +25,12 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <verify.h>
 
 #include "lisp.h"
-#include "coding.h"
 #include "intervals.h"
 #include "systime.h"
 #include "window.h"
@@ -1051,44 +1051,36 @@ it is in the sequence to be tried) even if a buffer with that name exists.
 If NAME begins with a space (i.e., a buffer that is not normally
 visible to users), then if buffer NAME already exists a random number
 is first appended to NAME, to speed up finding a non-existent buffer.  */)
-  (register Lisp_Object name, Lisp_Object ignore)
+  (Lisp_Object name, Lisp_Object ignore)
 {
-  register Lisp_Object gentemp, tem, tem2;
-  ptrdiff_t count;
-  char number[INT_BUFSIZE_BOUND (ptrdiff_t) + sizeof "<>"];
+  Lisp_Object genbase;
 
   CHECK_STRING (name);
 
-  tem = Fstring_equal (name, ignore);
-  if (!NILP (tem))
-    return name;
-  tem = Fget_buffer (name);
-  if (NILP (tem))
+  if (!NILP (Fstring_equal (name, ignore)) || NILP (Fget_buffer (name)))
     return name;
 
-  if (!strncmp (SSDATA (name), " ", 1)) /* see bug#1229 */
+  if (SREF (name, 0) != ' ') /* See bug#1229.  */
+    genbase = name;
+  else
     {
       /* Note fileio.c:make_temp_name does random differently.  */
-      tem2 = concat2 (name, make_formatted_string
-		      (number, "-%"pI"d",
-		       XFASTINT (Frandom (make_number (999999)))));
-      tem = Fget_buffer (tem2);
-      if (NILP (tem))
-	return tem2;
+      char number[sizeof "-999999"];
+      int i = XFASTINT (Frandom (make_number (999999)));
+      AUTO_STRING_WITH_LEN (lnumber, number, sprintf (number, "-%d", i));
+      genbase = concat2 (name, lnumber);
+      if (NILP (Fget_buffer (genbase)))
+	return genbase;
     }
-  else
-    tem2 = name;
 
-  count = 1;
-  while (1)
+  for (ptrdiff_t count = 2; ; count++)
     {
-      gentemp = concat2 (tem2, make_formatted_string
-			 (number, "<%"pD"d>", ++count));
-      tem = Fstring_equal (gentemp, ignore);
-      if (!NILP (tem))
-	return gentemp;
-      tem = Fget_buffer (gentemp);
-      if (NILP (tem))
+      char number[INT_BUFSIZE_BOUND (ptrdiff_t) + sizeof "<>"];
+      AUTO_STRING_WITH_LEN (lnumber, number,
+			    sprintf (number, "<%"pD"d>", count));
+      Lisp_Object gentemp = concat2 (genbase, lnumber);
+      if (!NILP (Fstring_equal (gentemp, ignore))
+	  || NILP (Fget_buffer (gentemp)))
 	return gentemp;
     }
 }
@@ -1993,7 +1985,9 @@ the current buffer's major mode.  */)
 	function = BVAR (current_buffer, major_mode);
     }
 
-  if (NILP (function) || EQ (function, Qfundamental_mode))
+  if (NILP (function)) /* If function is `fundamental-mode', allow it to run
+                          so that `run-mode-hooks' and thus
+                          `hack-local-variables' get run. */
     return Qnil;
 
   count = SPECPDL_INDEX ();
@@ -2001,7 +1995,7 @@ the current buffer's major mode.  */)
   /* To select a nonfundamental mode,
      select the buffer temporarily and then call the mode function.  */
 
-  record_unwind_protect (save_excursion_restore, save_excursion_save ());
+  record_unwind_current_buffer ();
 
   Fset_buffer (buffer);
   call0 (function);
@@ -3562,8 +3556,8 @@ void
 fix_start_end_in_overlays (register ptrdiff_t start, register ptrdiff_t end)
 {
   Lisp_Object overlay;
-  struct Lisp_Overlay *before_list IF_LINT (= NULL);
-  struct Lisp_Overlay *after_list IF_LINT (= NULL);
+  struct Lisp_Overlay *before_list;
+  struct Lisp_Overlay *after_list;
   /* These are either nil, indicating that before_list or after_list
      should be assigned, or the cons cell the cdr of which should be
      assigned.  */
@@ -3710,7 +3704,7 @@ fix_overlays_before (struct buffer *bp, ptrdiff_t prev, ptrdiff_t pos)
   /* If parent is nil, replace overlays_before; otherwise, parent->next.  */
   struct Lisp_Overlay *tail = bp->overlays_before, *parent = NULL, *right_pair;
   Lisp_Object tem;
-  ptrdiff_t end IF_LINT (= 0);
+  ptrdiff_t end;
 
   /* After the insertion, the several overlays may be in incorrect
      order.  The possibility is that, in the list `overlays_before',
@@ -3917,7 +3911,8 @@ buffer.  */)
   struct buffer *b, *ob = 0;
   Lisp_Object obuffer;
   ptrdiff_t count = SPECPDL_INDEX ();
-  ptrdiff_t n_beg, n_end, o_beg IF_LINT (= 0), o_end IF_LINT (= 0);
+  ptrdiff_t n_beg, n_end;
+  ptrdiff_t o_beg UNINIT, o_end UNINIT;
 
   CHECK_OVERLAY (overlay);
   if (NILP (buffer))
@@ -5279,7 +5274,7 @@ init_buffer (int initialized)
   if (NILP (BVAR (&buffer_defaults, enable_multibyte_characters)))
     Fset_buffer_multibyte (Qnil);
 
-  pwd = get_current_dir_name ();
+  pwd = emacs_get_current_dir_name ();
 
   if (!pwd)
     {

@@ -904,9 +904,6 @@ A GNU (glibc-based) system with a FreeBSD kernel.
 @item hpux
 Hewlett-Packard HPUX operating system.
 
-@item irix
-Silicon Graphics Irix system.
-
 @item nacl
 Google Native Client (@acronym{NaCl}) sandboxing system.
 
@@ -1332,7 +1329,13 @@ omitted or @code{nil}, the conversion uses Emacs's default time zone.
 If it is @code{t}, the conversion uses Universal Time.  If it is
 @code{wall}, the conversion uses the system wall clock time.  If it is
 a string, the conversion uses the time zone rule equivalent to setting
-@env{TZ} to that string.
+@env{TZ} to that string.  If it is an integer @var{offset}, the
+conversion uses a fixed time zone with the given offset and a numeric
+abbreviation on POSIX-compatible platforms and an unspecified abbreviation
+on MS-Windows.  If it is a list (@var{offset} @var{abbr}), where
+@var{offset} is an integer number of seconds east of Universal Time
+and @var{abbr} is a string, the conversion uses a fixed time zone with
+the given offset and abbreviation.
 
 @defun current-time-zone &optional time zone
 @cindex time zone, current
@@ -1430,10 +1433,6 @@ yourself before you call @code{encode-time}.
 
 The optional argument @var{zone} defaults to the current time zone rule.
 @xref{Time Zone Rules}.
-In addition to the usual time zone rule values, it can also be a list
-(as you would get from @code{current-time-zone}) or an integer (as
-from @code{decode-time}), applied without any further alteration for
-daylight saving time.
 
 If you pass more than seven arguments to @code{encode-time}, the first
 six are used as @var{seconds} through @var{year}, the last argument is
@@ -1727,10 +1726,17 @@ This function returns @code{t} if @var{year} is a leap year.
 
 @node Timers
 @section Timers for Delayed Execution
-@cindex timer
+@cindex timers
 
   You can set up a @dfn{timer} to call a function at a specified
-future time or after a certain length of idleness.
+future time or after a certain length of idleness.  A timer is a
+special object that stores the information about the next invocation
+times and the function to invoke.
+
+@defun timerp object
+This predicate function returns non-@code{nil} of @code{object} is a
+timer.
+@end defun
 
   Emacs cannot run timers at any arbitrary point in a Lisp program; it
 can run them only when Emacs could accept output from a subprocess:
@@ -1865,6 +1871,12 @@ timer---usually, one previously returned by @code{run-at-time} or
 one of these functions; the arrival of the specified time will not
 cause anything special to happen.
 @end defun
+
+@findex timer-list
+The @code{timer-list} command lists all the currently active timers.
+There's only one command available in the buffer displayed: @kbd{c}
+(@code{timer-list-cancel}) that will cancel the timer on the line
+under point.
 
 @node Idle Timers
 @section Idle Timers

@@ -129,18 +129,18 @@ static DWORD_PTR committed = 0;
 /* The maximum block size that can be handled by a non-growable w32
    heap is limited by the MaxBlockSize value below.
 
-   This point deserves and explanation.
+   This point deserves an explanation.
 
-   The W32 heap allocator can be used for a growable
-   heap or a non-growable one.
+   The W32 heap allocator can be used for a growable heap or a
+   non-growable one.
 
    A growable heap is not compatible with a fixed base address for the
    heap.  Only a non-growable one is.  One drawback of non-growable
    heaps is that they can hold only objects smaller than a certain
-   size (the one defined below).  Most of the largest blocks are GC'ed
-   before dumping.  In any case and to be safe, we implement a simple
+   size (the one defined below).  Most of the larger blocks are GC'ed
+   before dumping.  In any case, and to be safe, we implement a simple
    first-fit allocation algorithm starting at the end of the
-   dumped_data[] array like depicted below:
+   dumped_data[] array as depicted below:
 
   ----------------------------------------------
   |               |              |             |
@@ -189,7 +189,7 @@ free_fn the_free_fn;
    claims for new memory.  Before dumping, we allocate space
    from the fixed size dumped_data[] array.
 */
-NTSTATUS NTAPI
+static NTSTATUS NTAPI
 dumped_data_commit (PVOID Base, PVOID *CommitAddress, PSIZE_T CommitSize)
 {
   /* This is used before dumping.
@@ -273,7 +273,7 @@ init_heap (void)
   else
     {
       /* Find the RtlCreateHeap function.  Headers for this function
-         are provided with the w32 ddk, but the function is available
+         are provided with the w32 DDK, but the function is available
          in ntdll.dll since XP.  */
       HMODULE hm_ntdll = LoadLibrary ("ntdll.dll");
       RtlCreateHeap_Proc s_pfn_Rtl_Create_Heap
@@ -323,9 +323,9 @@ init_heap (void)
 
 /* FREEABLE_P checks if the block can be safely freed.  */
 #define FREEABLE_P(addr)						\
-    ((unsigned char *)(addr) > 0					\
-     && ((unsigned char *)(addr) < dumped_data				\
-	 || (unsigned char *)(addr) >= dumped_data + DUMPED_HEAP_SIZE))
+  ((DWORD_PTR)(unsigned char *)(addr) > 0				\
+   && ((unsigned char *)(addr) < dumped_data				\
+       || (unsigned char *)(addr) >= dumped_data + DUMPED_HEAP_SIZE))
 
 void *
 malloc_after_dump (size_t size)
@@ -708,7 +708,7 @@ mmap_realloc (void **var, size_t nbytes)
   if (memInfo.RegionSize < nbytes)
     {
       memset (&m2, 0, sizeof (m2));
-      if (VirtualQuery (*var + memInfo.RegionSize, &m2, sizeof(m2)) == 0)
+      if (VirtualQuery ((char *)*var + memInfo.RegionSize, &m2, sizeof(m2)) == 0)
         DebPrint (("mmap_realloc: VirtualQuery error = %ld\n",
 		   GetLastError ()));
       /* If there is enough room in the current reserved area, then
@@ -778,7 +778,7 @@ mmap_realloc (void **var, size_t nbytes)
         }
 
       /* We still can decommit pages.  */
-      if (VirtualFree (*var + nbytes + get_page_size(),
+      if (VirtualFree ((char *)*var + nbytes + get_page_size(),
 		       memInfo.RegionSize - nbytes - get_page_size(),
 		       MEM_DECOMMIT) == 0)
         DebPrint (("mmap_realloc: VirtualFree error %ld\n", GetLastError ()));

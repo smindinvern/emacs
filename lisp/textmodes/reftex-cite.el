@@ -73,7 +73,7 @@ The expanded value is cached."
 
 ;;;###autoload
 (defun reftex-bib-or-thebib ()
-  "Test if BibTeX or \begin{thebibliography} should be used for the citation.
+  "Test if BibTeX or \\begin{thebibliography} should be used for the citation.
 Find the bof of the current file"
   (let* ((docstruct (symbol-value reftex-docstruct-symbol))
          (rest (or (member (list 'bof (buffer-file-name)) docstruct)
@@ -1262,5 +1262,5 @@ created files in the variables `reftex-create-bibtex-header' or
 ;;; reftex-cite.el ends here
 
 ;; Local Variables:
-;; generated-autoload-file: "reftex.el"
+;; generated-autoload-file: "reftex-loaddefs.el"
 ;; End:

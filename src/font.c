@@ -23,6 +23,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <config.h>
 #include <float.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <c-ctype.h>
 
@@ -264,14 +265,13 @@ font_intern_prop (const char *str, ptrdiff_t len, bool force_symbol)
 	  break;
       if (i == len)
 	{
-	  EMACS_INT n;
-
 	  i = 0;
-	  for (n = 0; (n += str[i++] - '0') <= MOST_POSITIVE_FIXNUM; n *= 10)
+	  for (EMACS_INT n = 0;
+	       (n += str[i++] - '0') <= MOST_POSITIVE_FIXNUM; )
 	    {
 	      if (i == len)
 		return make_number (n);
-	      if (MOST_POSITIVE_FIXNUM / 10 < n)
+	      if (INT_MULTIPLY_WRAPV (n, 10, &n))
 		break;
 	    }
 
@@ -1771,7 +1771,8 @@ font_parse_family_registry (Lisp_Object family, Lisp_Object registry, Lisp_Objec
       p1 = strchr (p0, '-');
       if (! p1)
 	{
-	  AUTO_STRING (extra, (&"*-*"[len && p0[len - 1] == '*']));
+	  bool asterisk = len && p0[len - 1] == '*';
+	  AUTO_STRING_WITH_LEN (extra, &"*-*"[asterisk], 3 - asterisk);
 	  registry = concat2 (registry, extra);
 	}
       registry = Fdowncase (registry);
@@ -2233,7 +2234,8 @@ font_sort_entities (Lisp_Object list, Lisp_Object prefer,
   struct font_sort_data *data;
   unsigned best_score;
   Lisp_Object best_entity;
-  Lisp_Object tail, vec IF_LINT (= Qnil);
+  Lisp_Object tail;
+  Lisp_Object vec UNINIT;
   USE_SAFE_ALLOCA;
 
   for (i = FONT_WEIGHT_INDEX; i <= FONT_AVGWIDTH_INDEX; i++)
@@ -2861,7 +2863,7 @@ font_open_entity (struct frame *f, Lisp_Object entity, int pixel_size)
   struct font_driver_list *driver_list;
   Lisp_Object objlist, size, val, font_object;
   struct font *font;
-  int min_width, height, psize;
+  int height, psize;
 
   eassert (FONT_ENTITY_P (entity));
   size = AREF (entity, FONT_SIZE_INDEX);
@@ -2905,10 +2907,12 @@ font_open_entity (struct frame *f, Lisp_Object entity, int pixel_size)
 	Fcons (font_object, AREF (entity, FONT_OBJLIST_INDEX)));
 
   font = XFONT_OBJECT (font_object);
-  min_width = (font->min_width ? font->min_width
-	       : font->average_width ? font->average_width
-	       : font->space_width ? font->space_width
-	       : 1);
+#ifdef HAVE_WINDOW_SYSTEM
+  int min_width = (font->min_width ? font->min_width
+		   : font->average_width ? font->average_width
+		   : font->space_width ? font->space_width
+		   : 1);
+#endif
 
   int font_ascent, font_descent;
   get_font_ascent_descent (font, &font_ascent, &font_descent);
@@ -5271,6 +5275,16 @@ font_deferred_log (const char *action, Lisp_Object arg, Lisp_Object result)
 }
 
 void
+font_drop_xrender_surfaces (struct frame *f)
+{
+  struct font_driver_list *list;
+
+  for (list = f->font_driver_list; list; list = list->next)
+    if (list->on && list->driver->drop_xrender_surfaces)
+      list->driver->drop_xrender_surfaces (f);
+}
+
+void
 syms_of_font (void)
 {
   sort_shift_bits[FONT_TYPE_INDEX] = 0;
@@ -5429,6 +5443,19 @@ The default value is t, which means to suppress logging.
 Set it to nil to enable logging.  If the environment variable
 EMACS_FONT_LOG is set at startup, it defaults to nil.  */);
   Vfont_log = Qnil;
+
+  DEFVAR_BOOL ("inhibit-compacting-font-caches", inhibit_compacting_font_caches,
+	       doc: /*
+If non-nil, don't compact font caches during GC.
+Some large fonts cause lots of consing and trigger GC.  If they
+are removed from the font caches, they will need to be opened
+again during redisplay, which slows down redisplay.  If you
+see font-related delays in displaying some special characters,
+and cannot switch to a smaller font for those characters, set
+this variable non-nil.
+Disabling compaction of font caches might enlarge the Emacs memory
+footprint in sessions that use lots of different fonts.  */);
+  inhibit_compacting_font_caches = 0;
 
 #ifdef HAVE_WINDOW_SYSTEM
 #ifdef HAVE_FREETYPE
