@@ -20,6 +20,8 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <config.h>
 
 #include <jit.h>
+#include <jit-dump.h>
+#include <stdio.h>
 
 #include "lisp.h"
 #include "blockinput.h"
@@ -343,9 +345,14 @@ bcall0 (Lisp_Object f)
 }
 
 // Global jit context
-jit_context_t jit_context;
+jit_context_t jit_context = NULL;
 
 #define jit_type_Lisp_Object jit_type_nuint
+
+void enable_jit (bool t)
+{
+  byte_code_jit_on = t;
+}
 
 jit_type_t native_varref_sig;
 Lisp_Object
@@ -765,6 +772,7 @@ emacs_jit_init (void)
 
   JIT_SIG (native_varref, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_ifnil, jit_type_sys_bool, jit_type_Lisp_Object);
+  JIT_SIG (native_ifnonnil, jit_type_sys_bool, jit_type_Lisp_Object);
   JIT_SIG (native_car, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_eq, jit_type_Lisp_Object, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_memq, jit_type_Lisp_Object, jit_type_Lisp_Object, jit_type_Lisp_Object);
@@ -805,6 +813,7 @@ emacs_jit_init (void)
   JIT_SIG (native_number_p, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_integer_p, jit_type_Lisp_Object, jit_type_Lisp_Object);
 }
+
 
 Lisp_Object
 jit_exec (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lisp_Object *args)
@@ -864,19 +873,37 @@ jit_exec (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lis
 
   {
     void *arg = &top;
+    /*    Lisp_Object saved = AREF (byte_code, COMPILED_JIT_ID);
     jit_function_t func =
       XSAVE_POINTER (
-        XVECTOR (byte_code)->contents[COMPILED_JIT_ID],
-	0);
+	saved,
+	0); */
+    jit_function_t func = (jit_function_t )AREF (byte_code, COMPILED_JIT_ID);
     Lisp_Object ret;
     if (!jit_function_apply (func, &arg, (void *)&ret))
       emacs_abort ();
+    // mark_object (saved);
     return ret;
   }
 }
 
+DEFUN ("jit-exec", Fjit_exec, Sjit_exec, 2, 2, 0,
+       doc: /* Function used internally in byte-compiled code.
+The first argument, BYTECODE, is a compiled byte code object;
+the second, ARGS, is a vector containing the actual arguments to be passed. */)
+  (Lisp_Object byte_code, Lisp_Object args)
+{
+  ptrdiff_t nargs;
+  CHECK_VECTOR (args);
+  nargs = ASIZE (args);
+  return jit_exec (byte_code,
+		   AREF (byte_code, COMPILED_ARGLIST),
+		   nargs,
+		   XVECTOR (args)->contents);
+}
+
 Lisp_Object
-jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lisp_Object *args)
+jit_byte_code__ (Lisp_Object byte_code)
 {
   ptrdiff_t count = SPECPDL_INDEX ();
 #ifdef BYTE_CODE_METER
@@ -903,14 +930,15 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
   unsigned char *byte_string_start;
   unsigned char *pc;
 
-  if (!byte_code_jit_on)
+  // check if function has already been compiled
+  if (XVECTOR (byte_code)->contents[COMPILED_JIT_ID])
     {
-      return exec_byte_code (AREF (byte_code, COMPILED_BYTECODE),
-			     AREF (byte_code, COMPILED_CONSTANTS),
-			     AREF (byte_code, COMPILED_STACK_DEPTH),
-			     args_template,
-			     nargs,
-			     args);
+      return byte_code;
+    }
+  else if (!jit_context)
+    {
+      // jit is not yet initialized
+      emacs_jit_init ();
     }
 
   CHECK_COMPILED (byte_code);
@@ -936,16 +964,6 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
   if (MAX_ALLOCA / word_size <= XFASTINT (maxdepth))
     memory_full (SIZE_MAX);
 
-  // check if function has already been compiled
-  if (XVECTOR (byte_code)->contents[COMPILED_JIT_ID])
-    {
-      jit_function_t f =
-	XSAVE_POINTER (
-	  XVECTOR (byte_code)->contents[COMPILED_JIT_ID], 0);
-      if (f)
-	return jit_exec (byte_code, args_template, nargs, args);
-    }
-
   // prepare for jit
   jit_context_build_start (jit_context);
   params[0] = jit_type_void_ptr;
@@ -960,8 +978,6 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
     for (i = 0; i < SBYTES (bytestr); i++)
       labels[i] = jit_label_undefined;
   }
-  // start by jumping to the first label
-  jit_insn_branch (this_func, &labels[0]);
 
   while (pc < byte_string_start + bytestr_length)
     {
@@ -990,10 +1006,17 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 	 plain break.  */
 #define NEXT								\
       do {								\
-	if (pc >= byte_string_start + bytestr_length)	\
+        if (pc >= byte_string_start + bytestr_length)			\
 	  goto exit;							\
 	else								\
-	  goto *(targets[op = FETCH]);					\
+	  {								\
+	    /* create a new block and attach a label to it */		\
+	    /* since fetching the instruction increments pc, do		\
+	       this before we fetch the instruction, so pc is right */	\
+	    jit_insn_label (this_func, &labels[JIT_PC]);		\
+	    op = FETCH;							\
+	    goto *(targets[op]);					\
+	  }								\
       } while (0)
       /* FIRST is like NEXT, but is only used at the start of the
 	 interpreter body.  In the switch-based interpreter it is the
@@ -1053,7 +1076,7 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
       do {					\
         if (!jit_insn_branch (			\
               this_func,		        \
-	      &labels[JIT_PC+1]))		\
+	      &labels[JIT_PC]))			\
 	  emacs_abort ();			\
       } while (0)
 
@@ -1176,8 +1199,10 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 	  emacs_abort ();					\
       } while (0)
 
-      // create a new block and attach a label to it
+#ifndef BYTE_CODE_THREADED
+      /* create a new block and attach a label to it */
       jit_insn_label (this_func, &labels[JIT_PC]);
+#endif
 
       FIRST
 	{
@@ -1395,12 +1420,12 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 		op = (pc + op - 127) - byte_string_start;
 	      }
 	    JIT_NEED_STACK;
-	    v1 = JIT_CONSTANT (jit_type_Lisp_Object, vectorp[op]);
 	    JIT_POP (v2);
 	    if (insn == Bgotoifnil || insn == Bgotoifnilelsepop)
 	      v3 = JIT_CALL (native_ifnil, &v2, 1);
 	    else
 	      v3 = JIT_CALL (native_ifnonnil, &v2, 1);
+	    JIT_PUSH (v2);
 	    jit_insn_branch_if (
 	      this_func,
 	      v3,
@@ -1721,7 +1746,7 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 	    jit_value_t v1, v2;
 	    JIT_NEED_STACK;
 	    JIT_POP (v1);
-	    JIT_CALL_ARGS (v2, native_add1, v1, JIT_CONSTANT (jit_type_sys_bool, 1));
+	    JIT_CALL_ARGS (v2, native_add1, v1, JIT_CONSTANT (jit_type_sys_bool, 0));
 	    JIT_PUSH (v2);
 	    JIT_NEXT;
 	    NEXT;
@@ -1732,7 +1757,7 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 	    jit_value_t v1, v2;
 	    JIT_NEED_STACK;
 	    JIT_POP (v1);
-	    JIT_CALL_ARGS (v2, native_add1, v1, JIT_CONSTANT (jit_type_sys_bool, 0));
+	    JIT_CALL_ARGS (v2, native_add1, v1, JIT_CONSTANT (jit_type_sys_bool, 1));
 	    JIT_PUSH (v2);
 	    JIT_NEXT;
 	    NEXT;
@@ -2251,10 +2276,8 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 	      {
 		emacs_abort ();
 	      }
-	    c = JIT_CONSTANT (jit_type_Lisp_Object, vectorp[op]);
-#else
-	    c = JIT_CONSTANT (jit_type_Lisp_Object, vectorp[op - Bconstant]);
 #endif
+	    c = JIT_CONSTANT (jit_type_Lisp_Object, vectorp[op - Bconstant]);
 	    JIT_PUSH (c);
 	    JIT_NEXT;
 	    NEXT;
@@ -2265,17 +2288,18 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
  exit:
 
   {
-    Lisp_Object v;
+    // Lisp_Object v;
+    jit_dump_function (stdout, this_func, "this_func");
     int err = !jit_function_compile (this_func);
     jit_context_build_end (jit_context);
-    free (labels);
     if (err)
       emacs_abort ();
-    v = make_save_ptr (this_func);
-    XVECTOR (byte_code)->contents[COMPILED_JIT_ID] = v;
+    // v = make_save_ptr (this_func);
+    ASET (byte_code, COMPILED_JIT_ID, (Lisp_Object )this_func);
+    // XVECTOR (byte_code)->contents[COMPILED_JIT_ID] = v;
   }
 
-  return jit_exec (byte_code, args_template, nargs, args);
+  return byte_code;
 
 #undef JIT_NEXT
 #undef NEXT
@@ -2284,6 +2308,37 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
 #undef CASE_DEFAULT
 #undef CASE_ABORT
 #undef LABEL
+}
+
+Lisp_Object
+jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lisp_Object *args)
+{
+  if (AREF (byte_code, COMPILED_JIT_ID))
+    {
+      return jit_exec (byte_code, args_template, nargs, args);
+    }
+  if (!byte_code_jit_on)
+    {
+      return exec_byte_code (AREF (byte_code, COMPILED_BYTECODE),
+			     AREF (byte_code, COMPILED_CONSTANTS),
+			     AREF (byte_code, COMPILED_STACK_DEPTH),
+			     args_template,
+			     nargs,
+			     args);
+    }
+  else
+    {
+      Lisp_Object x = jit_byte_code__ (byte_code);
+      return jit_exec (x, args_template, nargs, args);
+    }
+}
+
+DEFUN ("jit-compile", Fjit_compile, Sjit_compile, 1, 1, 0,
+       doc: /* Function used internally in byte-compiled code.
+The first argument, BYTECODE, is a compiled byte code object; */)
+  (Lisp_Object byte_code)
+{
+  return jit_byte_code__ (byte_code);
 }
 
 
@@ -3417,6 +3472,8 @@ void
 syms_of_bytecode (void)
 {
   defsubr (&Sbyte_code);
+  defsubr (&Sjit_compile);
+  defsubr (&Sjit_exec);
 
 #ifdef BYTE_CODE_METER
 
@@ -3444,8 +3501,8 @@ integer, it is incremented each time that symbol's function is called.  */);
            Fmake_vector (make_number (256), make_number (0)));
   }
 
+#endif
   DEFVAR_BOOL ("byte-code-jit-on", byte_code_jit_on,
 	       doc: /* If non-nil, compile byte-code to machine code before executing */);
   byte_code_jit_on = 0;
-#endif
 }
