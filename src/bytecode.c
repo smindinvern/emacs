@@ -1416,16 +1416,19 @@ jit_byte_code__ (Lisp_Object byte_code)
 	      op = FETCH2;
 	    else
 	      {
-		op = FETCH;
-		op = (pc + op - 127) - byte_string_start;
+		op = FETCH - 128;
+		op += (pc - byte_string_start);
 	      }
 	    JIT_NEED_STACK;
 	    JIT_POP (v2);
-	    if (insn == Bgotoifnil || insn == Bgotoifnilelsepop)
+	    if (insn == Bgotoifnil || insn == BRgotoifnil
+		|| insn == Bgotoifnilelsepop || insn == BRgotoifnilelsepop)
 	      v3 = JIT_CALL (native_ifnil, &v2, 1);
 	    else
 	      v3 = JIT_CALL (native_ifnonnil, &v2, 1);
-	    JIT_PUSH (v2);
+	    if (insn == Bgotoifnilelsepop || insn == Bgotoifnonnilelsepop
+		|| insn == BRgotoifnilelsepop || insn == BRgotoifnonnilelsepop)
+	      JIT_PUSH (v2);
 	    jit_insn_branch_if (
 	      this_func,
 	      v3,
@@ -1439,11 +1442,12 @@ jit_byte_code__ (Lisp_Object byte_code)
 
 	CASE (BRgoto):
 	  {
-	    const unsigned char *dest = pc + ((int) *pc - 127);
+	    op = FETCH - 128;
+	    const int dest = (pc - byte_string_start) + op;
 	    JIT_CALL (byte_code_quit, NULL, 0);
 	    jit_insn_branch (
 	      this_func,
-	      &labels[dest - byte_string_start]);
+	      &labels[dest]);
 	    NEXT;
 	  }
 
@@ -1517,7 +1521,7 @@ jit_byte_code__ (Lisp_Object byte_code)
 	pushhandler:
 	  {
 	    jit_value_t tag, stackp, result, typev;
-	    int dest=  FETCH2;
+	    int dest = FETCH2;
 	    JIT_NEED_STACK;
 	    JIT_POP (tag);
 	    stackp = jit_insn_address_of (this_func, stackv);
