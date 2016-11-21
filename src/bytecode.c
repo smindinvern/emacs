@@ -533,11 +533,13 @@ native_pushhandler (Lisp_Object **stack, Lisp_Object tag,
 		    int type)
 {
   struct handler *c = push_handler (tag, type);
+  c->stack = stack;
 
   if (sys_setjmp (c->jmp))
     {
       struct handler *c = handlerlist;
       native_pophandler ();
+      stack = c->stack;
       (*stack)++;
       **stack = c->val;
       return true;
