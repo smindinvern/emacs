@@ -527,25 +527,25 @@ native_pophandler (void)
   handlerlist = handlerlist->next;
 }
 
-jit_type_t native_pushhandler_sig;
-bool
-native_pushhandler (Lisp_Object **stack, Lisp_Object tag,
+jit_type_t native_pushhandler1_sig;
+void *
+native_pushhandler1 (Lisp_Object **stack, Lisp_Object tag,
 		    int type)
 {
   struct handler *c = push_handler (tag, type);
   c->stack = stack;
+  return c->jmp;
+}
 
-  if (sys_setjmp (c->jmp))
-    {
+jit_type_t native_pushhandler2_sig;
+void
+native_pushhandler2(Lisp_Object **stack)
+{
       struct handler *c = handlerlist;
       native_pophandler ();
       stack = c->stack;
       (*stack)++;
       **stack = c->val;
-      return true;
-    }
-  else
-    return false;
 }
 
 jit_type_t native_unwind_protect_sig;
@@ -748,6 +748,8 @@ Lisp_Object native_integer_p (Lisp_Object v)
   return INTEGERP (v) ? Qt : Qnil;
 }
 
+jit_type_t setjmp_sig;
+
 void
 emacs_jit_init (void)
 {
@@ -772,6 +774,26 @@ emacs_jit_init (void)
 
   jit_context = jit_context_create();
 
+  do {
+    jit_type_t params[] =
+      {
+	jit_type_void_ptr,
+#ifdef HAVE_SIGSETJMP
+	jit_type_sys_int
+#endif
+      };
+    setjmp_sig = jit_type_create_signature (
+		   jit_abi_cdecl,
+		   jit_type_sys_int,
+		   params,
+#ifdef HAVE_SIGSETJMP
+		   2,
+#else
+		   1,
+#endif
+		   1);
+  } while (0);
+  
   JIT_SIG (native_varref, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_ifnil, jit_type_sys_bool, jit_type_Lisp_Object);
   JIT_SIG (native_ifnonnil, jit_type_sys_bool, jit_type_Lisp_Object);
@@ -790,7 +812,8 @@ emacs_jit_init (void)
   JIT_SIG (native_save_restriction, jit_type_void);
   JIT_SIG (native_catch, jit_type_Lisp_Object, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_pophandler, jit_type_void);
-  JIT_SIG (native_pushhandler, jit_type_sys_bool, jit_type_create_pointer (jit_type_void_ptr, 1), jit_type_Lisp_Object, jit_type_nint);
+  JIT_SIG (native_pushhandler1, jit_type_void_ptr, jit_type_create_pointer (jit_type_void_ptr, 1), jit_type_Lisp_Object, jit_type_nint);
+  JIT_SIG (native_pushhandler2, jit_type_void, jit_type_create_pointer (jit_type_void_ptr, 1));
   JIT_SIG (native_unwind_protect, jit_type_void, jit_type_Lisp_Object);
   JIT_SIG (native_temp_output_buffer_setup, jit_type_void, jit_type_Lisp_Object);
   JIT_SIG (native_nth, jit_type_Lisp_Object, jit_type_Lisp_Object, jit_type_Lisp_Object);
@@ -1522,15 +1545,41 @@ jit_byte_code__ (Lisp_Object byte_code)
 	  type = CONDITION_CASE;
 	pushhandler:
 	  {
-	    jit_value_t tag, stackp, result, typev;
+	    jit_label_t new_label;
+	    jit_value_t tag, stackp, jmp, result, result2, typev;
 	    int dest = FETCH2;
 	    JIT_NEED_STACK;
 	    JIT_POP (tag);
 	    stackp = jit_insn_address_of (this_func, stackv);
 	    typev = JIT_CONSTANT (jit_type_nint, type);
-	    JIT_CALL_ARGS (result, native_pushhandler, stackp, tag, typev);
-	    jit_insn_branch_if (this_func, result, &labels[dest]);
-	    JIT_NEXT;
+	    JIT_CALL_ARGS (jmp, native_pushhandler1, stackp, tag, typev);
+	    do {
+	      void *f;
+	      int n;
+	      jit_value_t args[2] = { jmp };
+#ifdef HAVE__SETJMP
+	      f = (void*)&_setjmp;
+	      n = 1;
+#elif defined HAVE_SIGSETJMP
+	      f = (void*)&sigsetjmp;
+	      n = 2;
+	      args[1] = JIT_CONSTANT (jit_type_sys_int, 0);
+#else
+	      f = (void*)&setjmp;
+	      n = 1;
+#endif
+	      result = jit_insn_call_native (
+  	                 this_func,
+  	                 "setjmp",
+  	                 f,
+  	                 setjmp_sig,	 
+  	                 args,
+  	                 n,
+  	                 JIT_CALL_NOTHROW);
+	    } while (0);
+	    jit_insn_branch_if_not (this_func, result, &labels[JIT_PC]);
+	    JIT_CALL (native_pushhandler2, &stackp, 1);
+	    jit_insn_branch (this_func, &labels[dest]);
 	    NEXT;
 	  }
 
