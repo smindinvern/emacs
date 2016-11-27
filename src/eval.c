@@ -1955,10 +1955,11 @@ it defines a macro.  */)
       Fprin1(Fcar (Fcdr (fundef)),Qexternal_debugging_output);
       fprintf(stderr, " nil nil ");
 
-      if(! NILP(macro_only))
-      {
-        fprintf(stderr, "nil");
-      }
+      Lisp_Object kind = Fnth (make_number (4), fundef);
+      if (! (EQ (kind, Qt) || EQ (kind, Qmacro)))
+        {
+          fprintf(stderr, "nil");
+        }
       else
         {
           fprintf(stderr, "t");
