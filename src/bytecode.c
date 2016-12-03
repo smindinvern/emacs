@@ -1243,7 +1243,7 @@ jit_byte_code__ (Lisp_Object byte_code)
 	    jit_value_t v1, v2;
 	    JIT_NEED_STACK;
 	    v1 = JIT_CONSTANT (jit_type_nuint, vectorp[op]);
-	    v2 = JIT_CALL (native_varref, &v1, 1);
+	    JIT_CALL_ARGS (v2, native_varref, v1);
 	    JIT_PUSH (v2);
 	    JIT_NEXT;
 	    NEXT;
@@ -1438,9 +1438,9 @@ jit_byte_code__ (Lisp_Object byte_code)
 	    JIT_POP (v2);
 	    if (insn == Bgotoifnil || insn == BRgotoifnil
 		|| insn == Bgotoifnilelsepop || insn == BRgotoifnilelsepop)
-	      v3 = JIT_CALL (native_ifnil, &v2, 1);
+	      JIT_CALL_ARGS (v3, native_ifnil, v2);
 	    else
-	      v3 = JIT_CALL (native_ifnonnil, &v2, 1);
+	      JIT_CALL_ARGS (v3, native_ifnonnil, v2);
 	    if (insn == Bgotoifnilelsepop || insn == Bgotoifnonnilelsepop
 		|| insn == BRgotoifnilelsepop || insn == BRgotoifnonnilelsepop)
 	      JIT_PUSH (v2);
