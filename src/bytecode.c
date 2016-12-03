@@ -570,13 +570,13 @@ Lisp_Object
 native_nth (Lisp_Object v1, Lisp_Object v2)
 {
   EMACS_INT n;
-  CHECK_NUMBER (v2);
-  n = XINT (v2);
+  CHECK_NUMBER (v1);
+  n = XINT (v1);
   immediate_quit = 1;
-  while (--n >= 0 && CONSP (v1))
-    v1 = XCDR (v1);
+  while (--n >= 0 && CONSP (v2))
+    v2 = XCDR (v2);
   immediate_quit = 0;
-  return CAR (v1);
+  return CAR (v2);
 }
 
 jit_type_t native_symbolp_sig;
