@@ -942,7 +942,6 @@ jit_byte_code__ (Lisp_Object byte_code)
   Lisp_Object bytestr;
   Lisp_Object vector;
   Lisp_Object maxdepth;
-  Lisp_Object *top;
   enum handlertype type;
 
   // jit-specific variables
@@ -1425,7 +1424,7 @@ jit_byte_code__ (Lisp_Object byte_code)
 	CASE (Bgotoifnonnilelsepop):
 	CASE (BRgotoifnonnilelsepop):
 	  {
-	    jit_value_t v1, v2, v3;
+	    jit_value_t v2, v3;
 	    int insn = op;
 	    if (insn >= Bgotoifnil && insn <= Bgotoifnonnilelsepop)
 	      op = FETCH2;
