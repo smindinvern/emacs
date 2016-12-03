@@ -1210,12 +1210,8 @@ jit_byte_code__ (Lisp_Object byte_code)
 	  f,							\
 	  JIT_CONSTANT (jit_type_nuint, n),			\
 	  stackv);						\
-	if (!jit_insn_store_relative (				\
-	      this_func,				        \
-	      stackv,						\
-	      (jit_nint )0,					\
-	      ret))						\
-	  emacs_abort ();					\
+	JIT_INC (stackv, -sizeof (Lisp_Object));		\
+	JIT_PUSH (ret);						\
       } while (0)
 
 #ifndef BYTE_CODE_THREADED
@@ -2284,12 +2280,8 @@ jit_byte_code__ (Lisp_Object byte_code)
 	    JIT_NEED_STACK;
 	    JIT_TOP (v1);
 	    if (offs != 0)
-	      JIT_INC (stackv, -offs * sizeof (Lisp_Object));
-	    jit_insn_store_relative (
-	      this_func,
-	      stackv,
-	      (jit_nint )0,
-	      v1);
+	      JIT_INC (stackv, -(offs + 1) * sizeof (Lisp_Object));
+	    JIT_PUSH (v1);
 	    JIT_INC (stackv, (offs - 1) * sizeof (Lisp_Object));
 	    JIT_NEXT;
 	    NEXT;
@@ -2303,12 +2295,8 @@ jit_byte_code__ (Lisp_Object byte_code)
 		op &= 0x7F;
 		JIT_NEED_STACK;
 		JIT_TOP (v1);
-		JIT_INC (stackv, -op * sizeof (Lisp_Object));
-		jit_insn_store_relative (
-		  this_func,
-		  stackv,
-		  (jit_nint )0,
-		  v1);
+		JIT_INC (stackv, -(op + 1) * sizeof (Lisp_Object));
+		JIT_PUSH (v1);
 	      }
 	    else
 	      JIT_INC (stackv, -op * sizeof (Lisp_Object));
