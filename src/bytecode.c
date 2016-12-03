@@ -1198,17 +1198,11 @@ jit_byte_code__ (Lisp_Object byte_code)
       do {							\
 	jit_value_t ret;					\
 	jit_type_t f##_sig;					\
-	jit_type_t ptr;						\
-	ptr = jit_type_create_pointer (				\
-	        jit_type_void_ptr,		                \
-	        1);						\
-	if (!ptr)						\
-	  emacs_abort ();					\
 	JIT_SIG (						\
 	  f,						        \
 	  jit_type_Lisp_Object,					\
 	  jit_type_nuint,					\
-	  ptr);							\
+	  jit_type_void_ptr);					\
 	JIT_NEED_STACK;						\
 	JIT_INC (stackv, -(n - 1) * sizeof (Lisp_Object));	\
 	JIT_CALL_ARGS (						\
