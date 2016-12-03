@@ -1780,7 +1780,7 @@ jit_byte_code__ (Lisp_Object byte_code)
 	    if (op == BconcatN)
 	      n = FETCH;
 	    else
-	      n = op - Bconcat2 + 1;
+	      n = op - Bconcat2 + 2;
 	    JIT_CALL_WITH_STACK_MANY (Fconcat, n);
 	    JIT_NEXT;
 	    NEXT;
