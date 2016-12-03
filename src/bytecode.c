@@ -1658,6 +1658,7 @@ jit_byte_code__ (Lisp_Object byte_code)
 		JIT_CALL_ARGS (v2, native_listp, v1);
 		break;
 	      case Bnot:
+	      default:
 		JIT_CALL_ARGS (v2, native_not, v1);
 		break;
 	      }
