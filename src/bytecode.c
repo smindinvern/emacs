@@ -778,7 +778,7 @@ emacs_jit_init (void)
     jit_type_t params[] =
       {
 	jit_type_void_ptr,
-#ifdef HAVE_SIGSETJMP
+#if !defined (HAVE__SETJMP) && defined (HAVE_SIGSETJMP)
 	jit_type_sys_int
 #endif
       };
@@ -786,7 +786,7 @@ emacs_jit_init (void)
 		   jit_abi_cdecl,
 		   jit_type_sys_int,
 		   params,
-#ifdef HAVE_SIGSETJMP
+#if !defined (HAVE__SETJMP) && defined (HAVE_SIGSETJMP)
 		   2,
 #else
 		   1,
