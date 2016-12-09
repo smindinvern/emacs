@@ -3181,7 +3181,7 @@ struct handler
   enum handlertype type;
   Lisp_Object tag_or_ch;
   Lisp_Object val;
-  Lisp_Object **stack;
+  Lisp_Object *stack;
   struct handler *next;
   struct handler *nextfree;
 

@@ -533,7 +533,7 @@ native_pushhandler1 (Lisp_Object **stack, Lisp_Object tag,
 		    int type)
 {
   struct handler *c = push_handler (tag, type);
-  c->stack = stack;
+  c->stack = *stack;
   return c->jmp;
 }
 
@@ -543,7 +543,7 @@ native_pushhandler2(Lisp_Object **stack)
 {
       struct handler *c = handlerlist;
       native_pophandler ();
-      stack = c->stack;
+      *stack = c->stack;
       (*stack)++;
       **stack = c->val;
 }
