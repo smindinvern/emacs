@@ -650,8 +650,7 @@ Lisp_Object native_negate (Lisp_Object v)
 {
   if (INTEGERP (v))
     {
-      XSETINT (v, - XINT (v));
-      return v;
+      return make_number (- XINT (v));
     }
   else
     return Fminus (1, &v);
@@ -660,9 +659,7 @@ Lisp_Object native_negate (Lisp_Object v)
 jit_type_t native_point_sig;
 Lisp_Object native_point (void)
 {
-  Lisp_Object v1;
-  XSETFASTINT (v1, PT);
-  return v1;
+  return make_natnum (PT);
 }
 
 jit_type_t native_point_max_sig;
@@ -676,17 +673,13 @@ Lisp_Object native_point_max (void)
 jit_type_t native_point_min_sig;
 Lisp_Object native_point_min (void)
 {
-  Lisp_Object v1;
-  XSETFASTINT (v1, BEGV);
-  return v1;
+  return make_natnum (BEGV);
 }
 
 jit_type_t native_current_column_sig;
 Lisp_Object native_current_column (void)
 {
-  Lisp_Object v1;
-  XSETFASTINT (v1, current_column ());
-  return v1;
+  return make_natnum (current_column ());
 }
 
 jit_type_t native_interactive_p_sig;
