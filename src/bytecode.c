@@ -558,11 +558,12 @@ native_unwind_protect (Lisp_Object handler)
 }
 
 jit_type_t native_temp_output_buffer_setup_sig;
-void
+Lisp_Object
 native_temp_output_buffer_setup (Lisp_Object x)
 {
   CHECK_STRING (x);
   temp_output_buffer_setup (SSDATA (x));
+  return Vstandard_output;
 }
 
 jit_type_t native_nth_sig;
@@ -815,7 +816,7 @@ emacs_jit_init (void)
   JIT_SIG (native_pushhandler1, jit_type_void_ptr, jit_type_create_pointer (jit_type_void_ptr, 1), jit_type_Lisp_Object, jit_type_nint);
   JIT_SIG (native_pushhandler2, jit_type_void, jit_type_create_pointer (jit_type_void_ptr, 1));
   JIT_SIG (native_unwind_protect, jit_type_void, jit_type_Lisp_Object);
-  JIT_SIG (native_temp_output_buffer_setup, jit_type_void, jit_type_Lisp_Object);
+  JIT_SIG (native_temp_output_buffer_setup, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_nth, jit_type_Lisp_Object, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_symbolp, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_consp, jit_type_Lisp_Object, jit_type_Lisp_Object);
@@ -1598,12 +1599,8 @@ jit_byte_code__ (Lisp_Object byte_code)
 
 	CASE (Btemp_output_buffer_setup): /* Obsolete since 24.1.  */
 	  {
-	    jit_value_t x, y;
 	    JIT_NEED_STACK;
-	    JIT_POP (x);
-	    JIT_CALL (native_temp_output_buffer_setup, &x, 1);
-	    y = JIT_CONSTANT (jit_type_Lisp_Object, Vstandard_output);
-	    JIT_PUSH (y);
+	    JIT_CALL_WITH_STACK_N (native_temp_output_buffer_setup, 1);
 	    JIT_NEXT;
 	    NEXT;
 	  }
