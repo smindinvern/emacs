@@ -2279,11 +2279,11 @@ jit_byte_code__ (Lisp_Object byte_code)
 	CASE (BdiscardN):
 	  {
 	    op = FETCH;
+	    JIT_NEED_STACK;
 	    if (op & 0x80)
 	      {
 		jit_value_t v1;
 		op &= 0x7F;
-		JIT_NEED_STACK;
 		JIT_TOP (v1);
 		JIT_INC (stackv, -(op + 1) * sizeof (Lisp_Object));
 		JIT_PUSH (v1);
