@@ -1907,7 +1907,8 @@ jit_byte_code__ (Lisp_Object byte_code)
 
 	CASE (BinsertN):
 	  {
-	    JIT_CALL_WITH_STACK_MANY (Finsert, FETCH);
+	    Lisp_Object n = FETCH;
+	    JIT_CALL_WITH_STACK_MANY (Finsert, n);
 	    JIT_NEXT;
 	    NEXT;
 	  }
