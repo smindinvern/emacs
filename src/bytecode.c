@@ -945,6 +945,9 @@ jit_byte_code__ (Lisp_Object byte_code)
   unsigned char *byte_string_start;
   unsigned char *pc;
 
+  /* ensure this is a byte-coded function _before_ doing anything else */
+  CHECK_COMPILED (byte_code);
+
   /* check if function has already been compiled */
   if (XVECTOR (byte_code)->contents[COMPILED_JIT_ID])
     {
@@ -956,7 +959,6 @@ jit_byte_code__ (Lisp_Object byte_code)
       emacs_jit_init ();
     }
 
-  CHECK_COMPILED (byte_code);
   bytestr = XVECTOR (byte_code)->contents[COMPILED_BYTECODE];
   vector = XVECTOR (byte_code)->contents[COMPILED_CONSTANTS];
   maxdepth = XVECTOR (byte_code)->contents[COMPILED_STACK_DEPTH];
