@@ -20,7 +20,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <config.h>
 
 #include <jit.h>
-#include <jit-dump.h>
 #include <stdio.h>
 
 #include "lisp.h"
@@ -344,18 +343,13 @@ bcall0 (Lisp_Object f)
   Ffuncall (1, &f);
 }
 
-// Global jit context
+/* Global jit context */
 jit_context_t jit_context = NULL;
 
 #define jit_type_Lisp_Object jit_type_nuint
 
-void enable_jit (bool t)
-{
-  byte_code_jit_on = t;
-}
-
 jit_type_t native_varref_sig;
-Lisp_Object
+static Lisp_Object
 native_varref (Lisp_Object v1)
 {
   Lisp_Object v2;
@@ -377,7 +371,7 @@ native_varref (Lisp_Object v1)
 }
 
 jit_type_t native_ifnil_sig;
-bool
+static bool
 native_ifnil (Lisp_Object v1)
 {
   maybe_gc ();
@@ -391,7 +385,7 @@ native_ifnil (Lisp_Object v1)
 }
 
 jit_type_t native_ifnonnil_sig;
-bool
+static bool
 native_ifnonnil (Lisp_Object v1)
 {
   maybe_gc ();
@@ -406,7 +400,7 @@ native_ifnonnil (Lisp_Object v1)
 }
 
 jit_type_t native_car_sig;
-Lisp_Object
+static Lisp_Object
 native_car (Lisp_Object v1)
 {
   if (CONSP (v1))
@@ -420,14 +414,14 @@ native_car (Lisp_Object v1)
 }
 
 jit_type_t native_eq_sig;
-Lisp_Object
+static Lisp_Object
 native_eq (Lisp_Object v1, Lisp_Object v2)
 {
   return EQ (v1, v2) ? Qt : Qnil;
 }
 
 jit_type_t native_memq_sig;
-Lisp_Object
+static Lisp_Object
 native_memq (Lisp_Object v1, Lisp_Object v2)
 {
   v1 = Fmemq (v1, v2);
@@ -435,7 +429,7 @@ native_memq (Lisp_Object v1, Lisp_Object v2)
 }
 
 jit_type_t native_cdr_sig;
-Lisp_Object
+static Lisp_Object
 native_cdr (Lisp_Object v1)
 {
   if (CONSP (v1))
@@ -449,7 +443,7 @@ native_cdr (Lisp_Object v1)
 }
 
 jit_type_t native_varset_sig;
-void
+static void
 native_varset (Lisp_Object sym, Lisp_Object val)
 {
   /* Inline the most common case.  */
@@ -468,7 +462,7 @@ jit_type_t specbind_sig;
 jit_type_t Ffuncall_sig;
 
 jit_type_t native_unbind_to_sig;
-Lisp_Object
+static Lisp_Object
 native_unbind_to (ptrdiff_t x, Lisp_Object q)
 {
   return unbind_to (SPECPDL_INDEX () - x, q);
@@ -477,7 +471,7 @@ native_unbind_to (ptrdiff_t x, Lisp_Object q)
 jit_type_t unbind_to_sig;
 
 jit_type_t byte_code_quit_sig;
-void
+static void
 byte_code_quit (void)
 {
   maybe_gc ();
@@ -485,7 +479,7 @@ byte_code_quit (void)
 }
 
 jit_type_t native_save_excursion_sig;
-void
+static void
 native_save_excursion (void)
 {
   record_unwind_protect (save_excursion_restore,
@@ -493,7 +487,7 @@ native_save_excursion (void)
 }
 
 jit_type_t native_save_restriction_sig;
-void
+static void
 native_save_restriction (void)
 {
   record_unwind_protect (save_restriction_restore,
@@ -502,7 +496,7 @@ native_save_restriction (void)
 
 
 jit_type_t native_save_window_excursion_sig;
-Lisp_Object
+static Lisp_Object
 native_save_window_excursion (Lisp_Object v1)
 {
   ptrdiff_t count1 = SPECPDL_INDEX ();
@@ -514,21 +508,21 @@ native_save_window_excursion (Lisp_Object v1)
 }
 
 jit_type_t native_catch_sig;
-Lisp_Object
+static Lisp_Object
 native_catch (Lisp_Object v2, Lisp_Object v1)
 {
   return internal_catch (v2, eval_sub, v1);
 }
 
 jit_type_t native_pophandler_sig;
-void
+static void
 native_pophandler (void)
 {
   handlerlist = handlerlist->next;
 }
 
 jit_type_t native_pushhandler1_sig;
-void *
+static void *
 native_pushhandler1 (Lisp_Object **stack, Lisp_Object tag,
 		    int type)
 {
@@ -538,7 +532,7 @@ native_pushhandler1 (Lisp_Object **stack, Lisp_Object tag,
 }
 
 jit_type_t native_pushhandler2_sig;
-void
+static void
 native_pushhandler2(Lisp_Object **stack)
 {
       struct handler *c = handlerlist;
@@ -549,7 +543,7 @@ native_pushhandler2(Lisp_Object **stack)
 }
 
 jit_type_t native_unwind_protect_sig;
-void
+static void
 native_unwind_protect (Lisp_Object handler)
 {
   record_unwind_protect (NILP (Ffunctionp (handler))
@@ -558,7 +552,7 @@ native_unwind_protect (Lisp_Object handler)
 }
 
 jit_type_t native_temp_output_buffer_setup_sig;
-Lisp_Object
+static Lisp_Object
 native_temp_output_buffer_setup (Lisp_Object x)
 {
   CHECK_STRING (x);
@@ -567,7 +561,7 @@ native_temp_output_buffer_setup (Lisp_Object x)
 }
 
 jit_type_t native_nth_sig;
-Lisp_Object
+static Lisp_Object
 native_nth (Lisp_Object v1, Lisp_Object v2)
 {
   EMACS_INT n;
@@ -585,34 +579,34 @@ jit_type_t native_consp_sig;
 jit_type_t native_stringp_sig;
 jit_type_t native_listp_sig;
 jit_type_t native_not_sig;
-Lisp_Object
+static Lisp_Object
 native_symbolp (Lisp_Object v1)
 {
   return SYMBOLP (v1) ? Qt : Qnil;
 }
-Lisp_Object
+static Lisp_Object
 native_consp (Lisp_Object v1)
 {
   return CONSP (v1) ? Qt : Qnil;
 }
-Lisp_Object
+static Lisp_Object
 native_stringp (Lisp_Object v1)
 {
   return STRINGP (v1) ? Qt : Qnil;
 }
-Lisp_Object
+static Lisp_Object
 native_listp (Lisp_Object v1)
 {
   return CONSP (v1) || NILP (v1) ? Qt : Qnil;
 }
-Lisp_Object
+static Lisp_Object
 native_not (Lisp_Object v1)
 {
   return NILP (v1) ? Qt : Qnil;
 }
 
 jit_type_t native_add1_sig;
-Lisp_Object
+static Lisp_Object
 native_add1 (Lisp_Object v1, bool add)
 {
   if (INTEGERP (v1))
@@ -627,7 +621,7 @@ native_add1 (Lisp_Object v1, bool add)
 }
 
 jit_type_t native_eqlsign_sig;
-Lisp_Object
+static Lisp_Object
 native_eqlsign (Lisp_Object v1, Lisp_Object v2)
 {
   CHECK_NUMBER_OR_FLOAT_COERCE_MARKER (v1);
@@ -646,7 +640,8 @@ native_eqlsign (Lisp_Object v1, Lisp_Object v2)
 
 jit_type_t arithcompare_sig;
 jit_type_t native_negate_sig;
-Lisp_Object native_negate (Lisp_Object v)
+static Lisp_Object
+native_negate (Lisp_Object v)
 {
   if (INTEGERP (v))
     {
@@ -657,13 +652,15 @@ Lisp_Object native_negate (Lisp_Object v)
 }
 
 jit_type_t native_point_sig;
-Lisp_Object native_point (void)
+static Lisp_Object
+native_point (void)
 {
   return make_natnum (PT);
 }
 
 jit_type_t native_point_max_sig;
-Lisp_Object native_point_max (void)
+static Lisp_Object
+native_point_max (void)
 {
   Lisp_Object v1;
   XSETFASTINT (v1, ZV);
@@ -671,25 +668,29 @@ Lisp_Object native_point_max (void)
 }
 
 jit_type_t native_point_min_sig;
-Lisp_Object native_point_min (void)
+static Lisp_Object
+native_point_min (void)
 {
   return make_natnum (BEGV);
 }
 
 jit_type_t native_current_column_sig;
-Lisp_Object native_current_column (void)
+static Lisp_Object
+native_current_column (void)
 {
   return make_natnum (current_column ());
 }
 
 jit_type_t native_interactive_p_sig;
-Lisp_Object native_interactive_p (void)
+static Lisp_Object
+native_interactive_p (void)
 {
   return call0 (intern ("interactive-p"));
 }
 
 jit_type_t native_char_syntax_sig;
-Lisp_Object native_char_syntax (Lisp_Object v)
+static Lisp_Object
+native_char_syntax (Lisp_Object v)
 {
   int c;
 
@@ -702,7 +703,8 @@ Lisp_Object native_char_syntax (Lisp_Object v)
 }
 
 jit_type_t native_elt_sig;
-Lisp_Object native_elt (Lisp_Object v1, Lisp_Object v2)
+static Lisp_Object
+native_elt (Lisp_Object v1, Lisp_Object v2)
 {
   if (CONSP (v2))
     {
@@ -721,30 +723,34 @@ Lisp_Object native_elt (Lisp_Object v1, Lisp_Object v2)
 }
 
 jit_type_t native_car_safe_sig;
-Lisp_Object native_car_safe (Lisp_Object v)
+static Lisp_Object
+native_car_safe (Lisp_Object v)
 {
   return CAR_SAFE (v);
 }
 jit_type_t native_cdr_safe_sig;
-Lisp_Object native_cdr_safe (Lisp_Object v)
+static Lisp_Object
+native_cdr_safe (Lisp_Object v)
 {
   return CDR_SAFE (v);
 }
 
 jit_type_t native_number_p_sig;
-Lisp_Object native_number_p (Lisp_Object v)
+static Lisp_Object
+native_number_p (Lisp_Object v)
 {
   return NUMBERP (v) ? Qt : Qnil;
 }
 jit_type_t native_integer_p_sig;
-Lisp_Object native_integer_p (Lisp_Object v)
+static Lisp_Object
+native_integer_p (Lisp_Object v)
 {
   return INTEGERP (v) ? Qt : Qnil;
 }
 
 jit_type_t setjmp_sig;
 
-void
+static void
 emacs_jit_init (void)
 {
 #define JIT_SIG_(f, ret, params)		\
@@ -800,7 +806,7 @@ emacs_jit_init (void)
   JIT_SIG (Ffuncall, jit_type_Lisp_Object, jit_type_nuint, jit_type_void_ptr);
   JIT_SIG (native_unbind_to, jit_type_Lisp_Object, jit_type_nuint, jit_type_Lisp_Object);
   JIT_SIG (unbind_to, jit_type_Lisp_Object, jit_type_nuint, jit_type_Lisp_Object);
-  JIT_SIG (byte_code_quit, jit_type_void);  /* should this have param type of jit_type_void? */
+  JIT_SIG (byte_code_quit, jit_type_void);
   JIT_SIG (native_save_excursion, jit_type_void);
   JIT_SIG (native_save_window_excursion, jit_type_Lisp_Object, jit_type_Lisp_Object);
   JIT_SIG (native_save_restriction, jit_type_void);
@@ -834,7 +840,7 @@ emacs_jit_init (void)
 }
 
 
-Lisp_Object
+static Lisp_Object
 jit_exec (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lisp_Object *args)
 {
   Lisp_Object *top;
@@ -891,18 +897,9 @@ jit_exec (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs, Lis
     }
 
   {
-    void *arg = &top;
-    /*    Lisp_Object saved = AREF (byte_code, COMPILED_JIT_ID);
-    jit_function_t func =
-      XSAVE_POINTER (
-	saved,
-	0); */
-    jit_function_t func = (jit_function_t )AREF (byte_code, COMPILED_JIT_ID);
-    Lisp_Object ret;
-    if (!jit_function_apply (func, &arg, (void *)&ret))
-      emacs_abort ();
-    // mark_object (saved);
-    return ret;
+    Lisp_Object (*func)(Lisp_Object *) =
+      (Lisp_Object (*)(Lisp_Object *))AREF (byte_code, COMPILED_JIT_ID);
+    return func (top);
   }
 }
 
@@ -921,7 +918,7 @@ the second, ARGS, is a vector containing the actual arguments to be passed. */)
 		   XVECTOR (args)->contents);
 }
 
-Lisp_Object
+static void
 jit_byte_code__ (Lisp_Object byte_code)
 {
   ptrdiff_t count = SPECPDL_INDEX ();
@@ -938,7 +935,7 @@ jit_byte_code__ (Lisp_Object byte_code)
   Lisp_Object maxdepth;
   enum handlertype type;
 
-  // jit-specific variables
+  /* jit-specific variables */
   jit_function_t this_func;
   jit_type_t params[1];
   jit_type_t signature;
@@ -948,14 +945,14 @@ jit_byte_code__ (Lisp_Object byte_code)
   unsigned char *byte_string_start;
   unsigned char *pc;
 
-  // check if function has already been compiled
+  /* check if function has already been compiled */
   if (XVECTOR (byte_code)->contents[COMPILED_JIT_ID])
     {
-      return byte_code;
+      return;
     }
   else if (!jit_context)
     {
-      // jit is not yet initialized
+      /* jit is not yet initialized */
       emacs_jit_init ();
     }
 
@@ -982,7 +979,7 @@ jit_byte_code__ (Lisp_Object byte_code)
   if (MAX_ALLOCA / word_size <= XFASTINT (maxdepth))
     memory_full (SIZE_MAX);
 
-  // prepare for jit
+  /* prepare for jit */
   jit_context_build_start (jit_context);
   params[0] = jit_type_void_ptr;
   signature = jit_type_create_signature (jit_abi_cdecl, jit_type_nuint, params, 1, 1);
@@ -990,8 +987,8 @@ jit_byte_code__ (Lisp_Object byte_code)
   stackv = jit_value_get_param (this_func, 0);
   labels = alloca (sizeof (*labels) * SBYTES (bytestr));
   {
-    // give each instruction a label.  the labels won't be initialized
-    // until we attach code to them, but they work as a placeholder.
+    /* give each instruction a label.  the labels won't be initialized
+       until we attach code to them, but they work as a placeholder. */
     int i;
     for (i = 0; i < SBYTES (bytestr); i++)
       labels[i] = jit_label_undefined;
@@ -2316,18 +2313,12 @@ jit_byte_code__ (Lisp_Object byte_code)
  exit:
 
   {
-    // Lisp_Object v;
-    jit_dump_function (stdout, this_func, "this_func");
     int err = !jit_function_compile (this_func);
     jit_context_build_end (jit_context);
     if (err)
       emacs_abort ();
-    // v = make_save_ptr (this_func);
-    ASET (byte_code, COMPILED_JIT_ID, (Lisp_Object )this_func);
-    // XVECTOR (byte_code)->contents[COMPILED_JIT_ID] = v;
+    ASET (byte_code, COMPILED_JIT_ID, (Lisp_Object )jit_function_to_closure(this_func));
   }
-
-  return byte_code;
 
 #undef JIT_NEXT
 #undef NEXT
@@ -2356,8 +2347,8 @@ jit_byte_code (Lisp_Object byte_code, Lisp_Object args_template, ptrdiff_t nargs
     }
   else
     {
-      Lisp_Object x = jit_byte_code__ (byte_code);
-      return jit_exec (x, args_template, nargs, args);
+      jit_byte_code__ (byte_code);
+      return jit_exec (byte_code, args_template, nargs, args);
     }
 }
 
@@ -2366,7 +2357,8 @@ DEFUN ("jit-compile", Fjit_compile, Sjit_compile, 1, 1, 0,
 The first argument, BYTECODE, is a compiled byte code object; */)
   (Lisp_Object byte_code)
 {
-  return jit_byte_code__ (byte_code);
+  jit_byte_code__ (byte_code);
+  return byte_code;
 }
 
 
